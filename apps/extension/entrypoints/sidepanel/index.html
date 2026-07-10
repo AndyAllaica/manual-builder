@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Manual Builder</title>
+    <meta name="manifest.open_at_install" content="false" />
+    <meta name="manifest.browser_style" content="false" />
+  </head>
+  <body>
+    <div class="panel-shell">
+      <header class="hero">
+        <p class="hero-kicker">Manual Builder</p>
+        <h1>Capturas de la sesión</h1>
+        <p class="hero-copy">
+          Selecciona un elemento con <strong>ALT + S</strong>. La extensión capturará la pestaña
+          visible y dejará aquí el resultado.
+        </p>
+        <div class="hero-actions">
+          <span id="status-badge" class="status-badge">Sin actividad</span>
+          <button id="clear-button" class="clear-button" type="button">Limpiar panel</button>
+        </div>
+      </header>
+
+      <main class="panel-content">
+        <section class="summary-card" aria-live="polite">
+          <p id="summary-title" class="summary-title">Esperando una selección</p>
+          <p id="summary-text" class="summary-text">
+            Abre una página HTTP o HTTPS, activa el selector y elige un elemento para generar la
+            primera captura.
+          </p>
+        </section>
+
+        <section id="pending-section" class="pending-section" hidden>
+          <div class="pending-spinner" aria-hidden="true"></div>
+          <div>
+            <p class="pending-title">Capturando pestaña visible</p>
+            <p id="pending-selector" class="pending-selector"></p>
+          </div>
+        </section>
+
+        <section id="error-section" class="error-section" hidden>
+          <p class="error-title">Último error</p>
+          <p id="error-text" class="error-text"></p>
+        </section>
+
+        <section id="preview-section" class="preview-section" hidden>
+          <div class="capture-frame">
+            <img id="capture-image" alt="Captura generada por Manual Builder" />
+          </div>
+
+          <div class="capture-details">
+            <div class="section-header">
+              <div>
+                <p class="section-kicker">Vista previa</p>
+                <h2 id="capture-heading">Última captura</h2>
+              </div>
+              <p id="capture-time" class="capture-time"></p>
+            </div>
+
+            <div class="detail-grid">
+              <div class="detail-card">
+                <span class="detail-label">Etiqueta</span>
+                <strong id="detail-tag"></strong>
+              </div>
+              <div class="detail-card">
+                <span class="detail-label">ID</span>
+                <strong id="detail-id"></strong>
+              </div>
+              <div class="detail-card detail-card-wide">
+                <span class="detail-label">Selector</span>
+                <code id="detail-selector"></code>
+              </div>
+              <div class="detail-card detail-card-wide">
+                <span class="detail-label">Texto</span>
+                <p id="detail-text" class="detail-text"></p>
+              </div>
+              <div class="detail-card detail-card-wide">
+                <span class="detail-label">Página</span>
+                <p id="detail-page" class="detail-page"></p>
+              </div>
+              <div class="detail-card">
+                <span class="detail-label">Posición</span>
+                <strong id="detail-rect"></strong>
+              </div>
+              <div class="detail-card">
+                <span class="detail-label">Viewport</span>
+                <strong id="detail-viewport"></strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="empty-section" class="empty-section" hidden>
+          <p class="empty-title">Todavía no hay capturas</p>
+          <p class="empty-copy">
+            Activa el modo selector, elige un elemento y el side panel mostrará la imagen con el
+            selector generado.
+          </p>
+        </section>
+
+        <section class="history-section">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Historial</p>
+              <h2>Últimas capturas</h2>
+            </div>
+            <p id="history-count" class="history-count">0 capturas</p>
+          </div>
+          <div id="history-list" class="history-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

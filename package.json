@@ -1,0 +1,14 @@
+{
+  "name": "manual-builder",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.21.0",
+  "scripts": {
+    "dev": "pnpm --filter manual-builder-extension dev",
+    "build": "pnpm --filter manual-builder-extension build",
+    "typecheck": "pnpm --filter manual-builder-extension typecheck",
+    "dev:extension": "pnpm --dir apps/extension dev",
+    "build:extension": "pnpm --dir apps/extension build",
+    "typecheck:extension": "pnpm --dir apps/extension typecheck"
+  }
+}
