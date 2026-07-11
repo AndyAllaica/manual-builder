@@ -1,3 +1,16 @@
+export interface SelectionRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ViewportData {
+  width: number;
+  height: number;
+  devicePixelRatio: number;
+}
+
 export interface SelectedElementData {
   tagName: string;
   id: string | null;
@@ -5,17 +18,8 @@ export interface SelectedElementData {
   selector: string;
   url: string;
   pageTitle: string;
-  rect: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-  viewport: {
-    width: number;
-    height: number;
-    devicePixelRatio: number;
-  };
+  rect: SelectionRect;
+  viewport: ViewportData;
 }
 
 export interface CapturedSelectionRecord {
@@ -23,11 +27,43 @@ export interface CapturedSelectionRecord {
   createdAt: string;
   imageDataUrl: string;
   selectedElement: SelectedElementData;
+  contextRegion: SelectionRect;
   tabId: number | null;
   windowId: number | null;
 }
 
+export type ImageAssetFormat = 'jpeg' | 'png' | 'webp';
+
+export interface ManualStep {
+  id: string;
+  order: number;
+  title: string;
+  description: string;
+  selector: string;
+  url: string;
+  pageTitle: string;
+  imageOriginalDataUrl: string;
+  imageOriginalFormat: ImageAssetFormat;
+  imageContextDataUrl: string;
+  imageContextFormat: ImageAssetFormat;
+  selectedElement: SelectedElementData;
+  contextRegion: SelectionRect;
+  createdAt: string;
+}
+
+export interface ManualDraft {
+  title: string;
+  author: string;
+  description: string;
+  createdAt: string;
+  steps: ManualStep[];
+  lastUpdatedAt: string | null;
+}
+
 export type CapturePanelStatus = 'idle' | 'capturing' | 'ready' | 'error';
+export type CaptureMode = 'review' | 'capture-only';
+
+export type ReviewSurface = 'sidepanel' | 'sidebar' | 'tab';
 
 export interface CapturePanelState {
   status: CapturePanelStatus;
@@ -35,6 +71,9 @@ export interface CapturePanelState {
   pendingSelection: SelectedElementData | null;
   lastError: string | null;
   lastUpdatedAt: string | null;
+  reviewSurface: ReviewSurface;
+  reviewTabId: number | null;
+  captureMode: CaptureMode;
 }
 
 export interface SelectionCapturedMessage {
@@ -42,17 +81,40 @@ export interface SelectionCapturedMessage {
   payload: SelectedElementData;
 }
 
+export interface SelectionCapturedResponse {
+  accepted: true;
+  keepSelecting: boolean;
+  replayAction: boolean;
+}
+
+export interface GetCaptureModeMessage {
+  type: typeof MESSAGE_TYPE_GET_CAPTURE_MODE;
+}
+
+export interface CaptureModeResponse {
+  captureMode: CaptureMode;
+}
+
 export interface ClearCapturesMessage {
   type: typeof MESSAGE_TYPE_CLEAR_CAPTURES;
 }
 
 export const MESSAGE_TYPE_SELECTION_CAPTURED = 'manual-builder/selection-captured';
+export const MESSAGE_TYPE_GET_CAPTURE_MODE = 'manual-builder/get-capture-mode';
 export const MESSAGE_TYPE_CLEAR_CAPTURES = 'manual-builder/clear-captures';
 export const PANEL_STATE_STORAGE_KEY = 'manualBuilderPanelState';
-export const MAX_CAPTURE_HISTORY = 3;
-export const MAX_CAPTURE_STORAGE_BYTES = 7_000_000;
+export const MANUAL_DRAFT_STORAGE_KEY = 'manualBuilderDraft';
+export const MAX_CAPTURE_HISTORY = 12;
+export const MAX_CAPTURE_STORAGE_BYTES = 8_500_000;
 export const CAPTURE_IMAGE_FORMAT = 'jpeg';
 export const CAPTURE_IMAGE_QUALITY = 85;
+export const CONTEXT_MIN_WIDTH = 320;
+export const CONTEXT_MIN_HEIGHT = 220;
+export const MAX_STEP_TITLE_LENGTH = 80;
+export const MAX_STEP_DESCRIPTION_LENGTH = 600;
+export const MAX_MANUAL_TITLE_LENGTH = 120;
+export const MAX_MANUAL_AUTHOR_LENGTH = 80;
+export const MAX_MANUAL_DESCRIPTION_LENGTH = 500;
 
 export function createEmptyPanelState(): CapturePanelState {
   return {
@@ -60,6 +122,20 @@ export function createEmptyPanelState(): CapturePanelState {
     captures: [],
     pendingSelection: null,
     lastError: null,
+    lastUpdatedAt: null,
+    reviewSurface: 'tab',
+    reviewTabId: null,
+    captureMode: 'review',
+  };
+}
+
+export function createEmptyManualDraft(): ManualDraft {
+  return {
+    title: 'Manual de usuario',
+    author: '',
+    description: '',
+    createdAt: new Date().toISOString(),
+    steps: [],
     lastUpdatedAt: null,
   };
 }
@@ -75,9 +151,75 @@ export function createCapturedSelectionRecord(
     createdAt: new Date().toISOString(),
     imageDataUrl,
     selectedElement,
+    contextRegion: buildContextRegion(selectedElement),
     tabId,
     windowId,
   };
+}
+
+export function createManualStep(input: {
+  capture: CapturedSelectionRecord;
+  order: number;
+  title: string;
+  description: string;
+  imageContextDataUrl: string;
+  imageContextFormat: ImageAssetFormat;
+}): ManualStep {
+  const { capture, order, title, description, imageContextDataUrl, imageContextFormat } = input;
+
+  return {
+    id: crypto.randomUUID(),
+    order,
+    title: clampText(title, MAX_STEP_TITLE_LENGTH) ?? `Paso ${order}`,
+    description: clampText(description, MAX_STEP_DESCRIPTION_LENGTH) ?? '',
+    selector: capture.selectedElement.selector,
+    url: capture.selectedElement.url,
+    pageTitle: capture.selectedElement.pageTitle,
+    imageOriginalDataUrl: capture.imageDataUrl,
+    imageOriginalFormat: detectImageFormatFromDataUrl(capture.imageDataUrl),
+    imageContextDataUrl,
+    imageContextFormat,
+    selectedElement: capture.selectedElement,
+    contextRegion: capture.contextRegion,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function normalizePanelState(state: CapturePanelState): CapturePanelState {
+  const defaultState = createEmptyPanelState();
+
+  return {
+    status: state.status,
+    captures: trimCapturesForStorage(state.captures),
+    pendingSelection: state.pendingSelection,
+    lastError: state.lastError,
+    lastUpdatedAt: state.lastUpdatedAt,
+    reviewSurface: state.reviewSurface,
+    reviewTabId: state.reviewTabId,
+    captureMode: state.captureMode ?? defaultState.captureMode,
+  };
+}
+
+export function normalizeManualDraft(draft: ManualDraft): ManualDraft {
+  const defaultDraft = createEmptyManualDraft();
+
+  return {
+    title: sanitizeManualTitle(draft.title) || defaultDraft.title,
+    author: sanitizeManualAuthor(draft.author),
+    description: sanitizeManualDescription(draft.description),
+    createdAt: typeof draft.createdAt === 'string' && draft.createdAt.length > 0
+      ? draft.createdAt
+      : defaultDraft.createdAt,
+    steps: resequenceManualSteps(draft.steps),
+    lastUpdatedAt: draft.lastUpdatedAt,
+  };
+}
+
+export function resequenceManualSteps(steps: ManualStep[]): ManualStep[] {
+  return steps.map((step, index) => ({
+    ...step,
+    order: index + 1,
+  }));
 }
 
 export function trimCapturesForStorage(captures: CapturedSelectionRecord[]): CapturedSelectionRecord[] {
@@ -100,6 +242,76 @@ export function trimCapturesForStorage(captures: CapturedSelectionRecord[]): Cap
   return acceptedCaptures;
 }
 
+export function buildContextRegion(selectedElement: SelectedElementData): SelectionRect {
+  const { rect, viewport } = selectedElement;
+  const horizontalPadding = Math.max(80, rect.width * 0.24);
+  const topPadding = Math.max(110, rect.height * 0.55);
+  const bottomPadding = Math.max(80, rect.height * 0.35);
+
+  let region = clampRegionToViewport({
+    x: rect.x - horizontalPadding,
+    y: rect.y - topPadding,
+    width: rect.width + horizontalPadding * 2,
+    height: rect.height + topPadding + bottomPadding,
+  }, viewport);
+
+  region = ensureMinimumRegionSize(region, viewport, CONTEXT_MIN_WIDTH, CONTEXT_MIN_HEIGHT);
+  return normalizeRect(region);
+}
+
+export function detectImageFormatFromDataUrl(dataUrl: string): ImageAssetFormat {
+  if (dataUrl.startsWith('data:image/webp')) {
+    return 'webp';
+  }
+
+  if (dataUrl.startsWith('data:image/png')) {
+    return 'png';
+  }
+
+  return 'jpeg';
+}
+
+export function getImageExtension(format: ImageAssetFormat): string {
+  switch (format) {
+    case 'png':
+      return 'png';
+    case 'webp':
+      return 'webp';
+    default:
+      return 'jpg';
+  }
+}
+
+export function buildStepTitleSuggestion(capture: CapturedSelectionRecord, nextOrder: number): string {
+  const candidate =
+    clampText(capture.selectedElement.text, 56) ??
+    clampText(capture.selectedElement.id, 32) ??
+    clampText(capture.selectedElement.pageTitle, 48) ??
+    capture.selectedElement.tagName;
+
+  return clampText(`Paso ${nextOrder}: ${candidate}`, MAX_STEP_TITLE_LENGTH) ?? `Paso ${nextOrder}`;
+}
+
+export function sanitizeStepTitle(value: string): string {
+  return clampText(value, MAX_STEP_TITLE_LENGTH) ?? '';
+}
+
+export function sanitizeStepDescription(value: string): string {
+  return clampText(value, MAX_STEP_DESCRIPTION_LENGTH) ?? '';
+}
+
+export function sanitizeManualTitle(value: string): string {
+  return clampText(value, MAX_MANUAL_TITLE_LENGTH) ?? '';
+}
+
+export function sanitizeManualAuthor(value: string): string {
+  return clampText(value, MAX_MANUAL_AUTHOR_LENGTH) ?? '';
+}
+
+export function sanitizeManualDescription(value: string): string {
+  return clampText(value, MAX_MANUAL_DESCRIPTION_LENGTH) ?? '';
+}
+
 export function isSelectionCapturedMessage(value: unknown): value is SelectionCapturedMessage {
   return (
     isRecord(value) &&
@@ -112,8 +324,92 @@ export function isClearCapturesMessage(value: unknown): value is ClearCapturesMe
   return isRecord(value) && value.type === MESSAGE_TYPE_CLEAR_CAPTURES;
 }
 
+export function isGetCaptureModeMessage(value: unknown): value is GetCaptureModeMessage {
+  return isRecord(value) && value.type === MESSAGE_TYPE_GET_CAPTURE_MODE;
+}
+
 function estimateDataUrlSize(dataUrl: string): number {
   return Math.ceil((dataUrl.length * 3) / 4);
+}
+
+function normalizeRect(rect: SelectionRect): SelectionRect {
+  return {
+    x: Math.max(0, Math.round(rect.x)),
+    y: Math.max(0, Math.round(rect.y)),
+    width: Math.max(1, Math.round(rect.width)),
+    height: Math.max(1, Math.round(rect.height)),
+  };
+}
+
+function clampRegionToViewport(region: SelectionRect, viewport: ViewportData): SelectionRect {
+  const x = clamp(region.x, 0, viewport.width);
+  const y = clamp(region.y, 0, viewport.height);
+  const right = clamp(region.x + region.width, 0, viewport.width);
+  const bottom = clamp(region.y + region.height, 0, viewport.height);
+
+  return {
+    x,
+    y,
+    width: Math.max(1, right - x),
+    height: Math.max(1, bottom - y),
+  };
+}
+
+function ensureMinimumRegionSize(
+  region: SelectionRect,
+  viewport: ViewportData,
+  minimumWidth: number,
+  minimumHeight: number,
+): SelectionRect {
+  let nextRegion = { ...region };
+
+  if (nextRegion.width < minimumWidth) {
+    const missingWidth = minimumWidth - nextRegion.width;
+    nextRegion = expandRegionHorizontally(nextRegion, viewport.width, missingWidth);
+  }
+
+  if (nextRegion.height < minimumHeight) {
+    const missingHeight = minimumHeight - nextRegion.height;
+    nextRegion = expandRegionVertically(nextRegion, viewport.height, missingHeight);
+  }
+
+  return clampRegionToViewport(nextRegion, viewport);
+}
+
+function expandRegionHorizontally(region: SelectionRect, viewportWidth: number, missingWidth: number): SelectionRect {
+  const leftExtra = missingWidth / 2;
+
+  return {
+    ...region,
+    x: Math.max(0, region.x - leftExtra),
+    width: Math.min(viewportWidth, region.width + missingWidth),
+  };
+}
+
+function expandRegionVertically(region: SelectionRect, viewportHeight: number, missingHeight: number): SelectionRect {
+  const topExtra = missingHeight * 0.6;
+  const bottomExtra = missingHeight - topExtra;
+  const y = Math.max(0, region.y - topExtra);
+  const bottom = Math.min(viewportHeight, region.y + region.height + bottomExtra);
+
+  return {
+    ...region,
+    y,
+    height: Math.max(1, bottom - y),
+  };
+}
+
+function clampText(value: string | null, maxLength: number): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length === 0) {
+    return null;
+  }
+
+  return normalized.slice(0, maxLength);
 }
 
 function isSelectedElementData(value: unknown): value is SelectedElementData {
@@ -133,7 +429,7 @@ function isSelectedElementData(value: unknown): value is SelectedElementData {
   );
 }
 
-function isRectLike(value: unknown): boolean {
+function isRectLike(value: unknown): value is SelectionRect {
   return (
     isRecord(value) &&
     isNumber(value.x) &&
@@ -143,7 +439,7 @@ function isRectLike(value: unknown): boolean {
   );
 }
 
-function isViewportLike(value: unknown): boolean {
+function isViewportLike(value: unknown): value is ViewportData {
   return (
     isRecord(value) &&
     isNumber(value.width) &&
@@ -162,4 +458,8 @@ function isNumber(value: unknown): value is number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(Math.max(value, minimum), maximum);
 }

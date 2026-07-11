@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Manual Builder | Vista final</title>
+  </head>
+  <body>
+    <div class="manual-shell">
+      <header class="screen-toolbar">
+        <div>
+          <p class="toolbar-kicker">Manual Builder</p>
+          <h1>Vista final del manual</h1>
+        </div>
+        <div class="toolbar-actions">
+          <button id="refresh-button" class="secondary-button" type="button">Actualizar</button>
+          <button id="print-button" class="primary-button" type="button">Imprimir / Guardar PDF</button>
+        </div>
+      </header>
+
+      <main id="manual-root" class="manual-root">
+        <section id="empty-state" class="empty-state" hidden>
+          <h2>No hay pasos para imprimir</h2>
+          <p>Regresa al side panel, confirma capturas y vuelve a abrir esta vista.</p>
+        </section>
+
+        <section id="manual-document" class="manual-document" hidden>
+          <header class="cover-card">
+            <div class="cover-accent"></div>
+            <div class="cover-copy">
+              <p class="document-kicker">Manual de usuario</p>
+              <h1 id="document-title"></h1>
+              <p id="document-description" class="document-description"></p>
+              <dl class="document-meta">
+                <div>
+                  <dt>Autor</dt>
+                  <dd id="document-author"></dd>
+                </div>
+                <div>
+                  <dt>Creado</dt>
+                  <dd id="document-created-at"></dd>
+                </div>
+                <div>
+                  <dt>Actualizado</dt>
+                  <dd id="document-updated-at"></dd>
+                </div>
+                <div>
+                  <dt>Total de pasos</dt>
+                  <dd id="document-step-count"></dd>
+                </div>
+              </dl>
+            </div>
+          </header>
+
+          <section id="steps-container" class="steps-container"></section>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

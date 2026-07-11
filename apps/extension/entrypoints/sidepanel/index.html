@@ -11,103 +11,309 @@
     <div class="panel-shell">
       <header class="hero">
         <p class="hero-kicker">Manual Builder</p>
-        <h1>Capturas de la sesión</h1>
+        <h1>Constructor del manual</h1>
         <p class="hero-copy">
-          Selecciona un elemento con <strong>ALT + S</strong>. La extensión capturará la pestaña
-          visible y dejará aquí el resultado.
+          Captura elementos con <strong>ALT + S</strong>, confirma los que sirven y arma el manual
+          paso a paso sin salir de la extension.
         </p>
         <div class="hero-actions">
           <span id="status-badge" class="status-badge">Sin actividad</span>
-          <button id="clear-button" class="clear-button" type="button">Limpiar panel</button>
+          <button id="clear-captures-button" class="clear-button" type="button">
+            Limpiar capturas
+          </button>
         </div>
       </header>
 
       <main class="panel-content">
         <section class="summary-card" aria-live="polite">
-          <p id="summary-title" class="summary-title">Esperando una selección</p>
+          <p id="summary-title" class="summary-title">Esperando una seleccion</p>
           <p id="summary-text" class="summary-text">
-            Abre una página HTTP o HTTPS, activa el selector y elige un elemento para generar la
-            primera captura.
+            Selecciona elementos en una pagina compatible para convertirlos en pasos del manual.
+          </p>
+        </section>
+
+        <section class="capture-mode-section">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Flujo</p>
+              <h2 id="capture-mode-title">Revision paso a paso</h2>
+            </div>
+            <button id="toggle-capture-mode-button" class="secondary-button" type="button">
+              Activar solo captura
+            </button>
+          </div>
+          <p id="capture-mode-text" class="summary-text">
+            El modo actual abre la revision al capturar y te deja decidir despues que guardar como paso.
           </p>
         </section>
 
         <section id="pending-section" class="pending-section" hidden>
           <div class="pending-spinner" aria-hidden="true"></div>
           <div>
-            <p class="pending-title">Capturando pestaña visible</p>
+            <p class="pending-title">Capturando pestana visible</p>
             <p id="pending-selector" class="pending-selector"></p>
           </div>
         </section>
 
         <section id="error-section" class="error-section" hidden>
-          <p class="error-title">Último error</p>
+          <p class="error-title">Ultimo error</p>
           <p id="error-text" class="error-text"></p>
         </section>
 
-        <section id="preview-section" class="preview-section" hidden>
-          <div class="capture-frame">
-            <img id="capture-image" alt="Captura generada por Manual Builder" />
-          </div>
-
-          <div class="capture-details">
-            <div class="section-header">
-              <div>
-                <p class="section-kicker">Vista previa</p>
-                <h2 id="capture-heading">Última captura</h2>
-              </div>
-              <p id="capture-time" class="capture-time"></p>
-            </div>
-
-            <div class="detail-grid">
-              <div class="detail-card">
-                <span class="detail-label">Etiqueta</span>
-                <strong id="detail-tag"></strong>
-              </div>
-              <div class="detail-card">
-                <span class="detail-label">ID</span>
-                <strong id="detail-id"></strong>
-              </div>
-              <div class="detail-card detail-card-wide">
-                <span class="detail-label">Selector</span>
-                <code id="detail-selector"></code>
-              </div>
-              <div class="detail-card detail-card-wide">
-                <span class="detail-label">Texto</span>
-                <p id="detail-text" class="detail-text"></p>
-              </div>
-              <div class="detail-card detail-card-wide">
-                <span class="detail-label">Página</span>
-                <p id="detail-page" class="detail-page"></p>
-              </div>
-              <div class="detail-card">
-                <span class="detail-label">Posición</span>
-                <strong id="detail-rect"></strong>
-              </div>
-              <div class="detail-card">
-                <span class="detail-label">Viewport</span>
-                <strong id="detail-viewport"></strong>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="empty-section" class="empty-section" hidden>
-          <p class="empty-title">Todavía no hay capturas</p>
-          <p class="empty-copy">
-            Activa el modo selector, elige un elemento y el side panel mostrará la imagen con el
-            selector generado.
-          </p>
-        </section>
-
-        <section class="history-section">
+        <section class="review-section">
           <div class="section-header">
             <div>
-              <p class="section-kicker">Historial</p>
-              <h2>Últimas capturas</h2>
+              <p class="section-kicker">Revision</p>
+              <h2>Capturas pendientes</h2>
             </div>
-            <p id="history-count" class="history-count">0 capturas</p>
+            <p id="queue-count" class="history-count">0 capturas</p>
           </div>
+
+          <section id="review-empty-section" class="empty-section">
+            <p class="empty-title">No hay capturas pendientes</p>
+            <p class="empty-copy">
+              Cuando selecciones un elemento, aparecera aqui la revision previa antes de guardarlo
+              como paso.
+            </p>
+          </section>
+
+          <section id="preview-section" class="preview-section" hidden>
+            <div class="capture-frame">
+              <div class="preview-toolbar">
+                <div>
+                  <p class="section-kicker">Vista principal</p>
+                  <h2 id="capture-heading">Ultima captura</h2>
+                </div>
+
+                <div class="preview-modes" role="toolbar" aria-label="Modo de vista">
+                  <button
+                    id="context-mode-button"
+                    class="mode-button is-active"
+                    type="button"
+                    aria-pressed="true"
+                  >
+                    Contexto
+                  </button>
+                  <button
+                    id="full-mode-button"
+                    class="mode-button"
+                    type="button"
+                    aria-pressed="false"
+                  >
+                    Pantalla completa
+                  </button>
+                </div>
+              </div>
+
+              <p id="capture-time" class="capture-time"></p>
+
+              <div class="capture-canvas-shell">
+                <canvas id="capture-canvas" aria-label="Vista previa de la captura seleccionada"></canvas>
+              </div>
+
+              <p id="preview-caption" class="preview-caption"></p>
+
+              <div class="capture-actions">
+                <button id="confirm-capture-button" class="primary-button" type="button">
+                  Agregar al manual
+                </button>
+                <button id="discard-capture-button" class="secondary-button" type="button">
+                  Descartar captura
+                </button>
+              </div>
+            </div>
+
+            <div class="capture-details">
+              <div class="section-header">
+                <div>
+                  <p class="section-kicker">Detalle</p>
+                  <h2>Seleccion actual</h2>
+                </div>
+              </div>
+
+              <div class="detail-grid">
+                <div class="detail-card">
+                  <span class="detail-label">Etiqueta</span>
+                  <strong id="detail-tag"></strong>
+                </div>
+                <div class="detail-card">
+                  <span class="detail-label">ID</span>
+                  <strong id="detail-id"></strong>
+                </div>
+                <div class="detail-card detail-card-wide">
+                  <span class="detail-label">Selector</span>
+                  <code id="detail-selector"></code>
+                </div>
+                <div class="detail-card detail-card-wide">
+                  <span class="detail-label">Texto</span>
+                  <p id="detail-text" class="detail-text"></p>
+                </div>
+                <div class="detail-card detail-card-wide">
+                  <span class="detail-label">Pagina</span>
+                  <p id="detail-page" class="detail-page"></p>
+                </div>
+                <div class="detail-card">
+                  <span class="detail-label">Elemento</span>
+                  <strong id="detail-rect"></strong>
+                </div>
+                <div class="detail-card">
+                  <span class="detail-label">Contexto</span>
+                  <strong id="detail-context"></strong>
+                </div>
+                <div class="detail-card">
+                  <span class="detail-label">Viewport</span>
+                  <strong id="detail-viewport"></strong>
+                </div>
+                <div class="detail-card">
+                  <span class="detail-label">Revision</span>
+                  <strong id="detail-surface"></strong>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <div id="history-list" class="history-list"></div>
+        </section>
+
+        <section class="editor-section">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Editor</p>
+              <h2>Paso seleccionado</h2>
+            </div>
+          </div>
+
+          <section id="step-empty-section" class="empty-section">
+            <p class="empty-title">Todavia no hay pasos guardados</p>
+            <p class="empty-copy">
+              Confirma una captura para convertirla en un paso editable del manual.
+            </p>
+          </section>
+
+          <section id="step-editor-section" class="step-editor" hidden>
+            <div class="step-preview-shell">
+              <img id="step-preview-image" alt="Vista del paso del manual" />
+            </div>
+
+            <div class="step-editor-copy">
+              <p class="section-kicker">Paso activo</p>
+              <h3 id="step-heading">Paso</h3>
+              <p id="step-meta" class="step-meta"></p>
+
+              <label class="field">
+                <span class="field-label">Titulo</span>
+                <input id="step-title-input" class="field-input" type="text" maxlength="80" />
+              </label>
+
+              <label class="field">
+                <span class="field-label">Descripcion</span>
+                <textarea
+                  id="step-description-input"
+                  class="field-textarea"
+                  rows="4"
+                  maxlength="600"
+                ></textarea>
+              </label>
+
+              <div class="editor-actions">
+                <button id="save-step-button" class="primary-button" type="button">
+                  Guardar cambios
+                </button>
+                <button id="move-step-up-button" class="secondary-button" type="button">
+                  Subir
+                </button>
+                <button id="move-step-down-button" class="secondary-button" type="button">
+                  Bajar
+                </button>
+                <button id="download-context-button" class="ghost-button" type="button">
+                  Descargar contexto
+                </button>
+                <button id="download-original-button" class="ghost-button" type="button">
+                  Descargar original
+                </button>
+                <button id="delete-step-button" class="danger-button" type="button">
+                  Eliminar paso
+                </button>
+              </div>
+
+              <div class="detail-grid compact-grid">
+                <div class="detail-card detail-card-wide">
+                  <span class="detail-label">Selector</span>
+                  <code id="step-detail-selector"></code>
+                </div>
+                <div class="detail-card detail-card-wide">
+                  <span class="detail-label">Pagina</span>
+                  <p id="step-detail-page" class="detail-page"></p>
+                </div>
+                <div class="detail-card">
+                  <span class="detail-label">Creado</span>
+                  <p id="step-detail-created-at" class="detail-page"></p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="steps-section">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Manual</p>
+              <h2>Pasos guardados</h2>
+            </div>
+            <p id="steps-count" class="history-count">0 pasos</p>
+          </div>
+          <div id="steps-list" class="steps-list"></div>
+        </section>
+
+        <section class="export-section">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Exportacion</p>
+              <h2>Salida local</h2>
+            </div>
+          </div>
+          <div class="document-meta">
+            <label class="field">
+              <span class="field-label">Titulo del manual</span>
+              <input id="manual-title-input" class="field-input" type="text" maxlength="120" />
+            </label>
+            <label class="field">
+              <span class="field-label">Autor</span>
+              <input id="manual-author-input" class="field-input" type="text" maxlength="80" />
+            </label>
+            <label class="field field-wide">
+              <span class="field-label">Descripcion</span>
+              <textarea
+                id="manual-description-input"
+                class="field-textarea"
+                rows="3"
+                maxlength="500"
+              ></textarea>
+            </label>
+            <button id="save-manual-meta-button" class="secondary-button" type="button">
+              Guardar datos del manual
+            </button>
+          </div>
+          <p class="summary-text export-copy">
+            Exporta el borrador actual en JSON y descarga las imagenes localmente sin backend.
+          </p>
+          <div class="export-actions">
+            <button id="open-manual-view-button" class="ghost-button" type="button">
+              Abrir vista final
+            </button>
+            <button id="open-print-view-button" class="ghost-button" type="button">
+              Abrir para PDF
+            </button>
+            <button id="export-json-button" class="primary-button" type="button">
+              Exportar JSON
+            </button>
+            <button id="export-images-button" class="secondary-button" type="button">
+              Exportar imagenes
+            </button>
+            <button id="clear-manual-button" class="danger-button" type="button">
+              Vaciar manual
+            </button>
+          </div>
         </section>
       </main>
     </div>

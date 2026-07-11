@@ -1,140 +1,208 @@
-# Manual Builder Extension MVP 2
+# Manual Builder Extension MVP 5
 
-## 1. Descripción del proyecto
+## 1. Descripcion del proyecto
 
-Este paquete contiene el segundo MVP de la extensión **Manual Builder**. Permite seleccionar elementos en páginas HTTP y HTTPS, capturar automáticamente la pestaña visible y mostrar el resultado en un side panel.
+Este paquete contiene la extension **Manual Builder** en su etapa actual. Permite:
 
-La selección ahora se divide en tres piezas:
+- Seleccionar elementos en paginas HTTP y HTTPS con `ALT + S`.
+- Resaltar el elemento bajo el cursor sin modificar sus estilos originales.
+- Bloquear el clic normal al seleccionar en el flujo de revision paso a paso.
+- Capturar la pestana visible.
+- Revisar la captura con un recorte contextual pensado para manuales.
+- Confirmar o descartar capturas antes de guardarlas.
+- Activar un modo explicito de `solo captura` para acumular capturas en lote.
+- Construir una lista de pasos del manual con titulo y descripcion editables.
+- Reordenar, eliminar y exportar pasos localmente.
+- Definir metadatos del manual: titulo, autor y descripcion.
+- Abrir una vista final del manual.
+- Imprimir esa vista o guardarla como PDF con la herramienta nativa del navegador.
 
-- `content.ts`: selector visual y metadatos del elemento.
-- `background.ts`: service worker y orquestación de capturas.
-- `sidepanel/`: revisión visual de capturas y datos asociados.
-
-En esta etapa **no** se implementan backend, base de datos, almacenamiento en OneDrive ni generación de PDF o DOCX.
+En esta etapa **no** se implementan backend, base de datos, OneDrive ni DOCX.
 
 ## 2. Requisitos
 
 - Node.js 20 o superior.
 - pnpm.
-- Un navegador Chromium reciente compatible con Manifest V3 y Side Panel API.
+- Un navegador compatible con extensiones MV3.
+- Para pruebas multiplataforma:
+  - Chrome, Chromium o Edge.
+  - Firefox.
 
-## 3. Instalación
+## 3. Instalacion
 
-Desde la raíz del repositorio:
+Desde la raiz del repositorio:
 
 ```bash
 cd manual-builder
 pnpm install
 ```
 
-También puedes instalar solo la app:
+Tambien puedes instalar solo la app:
 
 ```bash
 cd manual-builder/apps/extension
 pnpm install
 ```
 
-## 4. Ejecución en modo desarrollo
+## 4. Ejecucion en modo desarrollo
 
-Desde la raíz del workspace:
+Desde la raiz:
 
 ```bash
-cd manual-builder
 pnpm dev
-```
-
-Desde la carpeta de la extensión:
-
-```bash
-cd manual-builder/apps/extension
-pnpm dev
-```
-
-Comandos adicionales:
-
-```bash
+pnpm dev:chrome
+pnpm dev:firefox
 pnpm typecheck
-pnpm build
+pnpm build:chrome
+pnpm build:firefox
 ```
 
-## 5. Cómo cargar manualmente la extensión si WXT no abre el navegador
+Desde `apps/extension`:
 
-1. Ejecuta `pnpm dev`.
-2. Abre `chrome://extensions`, `edge://extensions` o la página equivalente de tu navegador Chromium.
+```bash
+pnpm dev
+pnpm dev:chrome
+pnpm dev:firefox
+pnpm typecheck
+pnpm build:chrome
+pnpm build:firefox
+```
+
+## 5. Como cargar manualmente la extension si WXT no abre el navegador
+
+### Chrome, Chromium o Edge
+
+1. Ejecuta `pnpm dev` o `pnpm dev:chrome`.
+2. Abre `chrome://extensions` o `edge://extensions`.
 3. Activa el modo desarrollador.
-4. Selecciona **Cargar descomprimida**.
-5. Carga la carpeta `manual-builder/apps/extension/.output/chrome-mv3-dev`.
+4. Usa **Cargar descomprimida**.
+5. Carga `manual-builder/apps/extension/.output/chrome-mv3-dev`.
+
+### Firefox
+
+1. Ejecuta `pnpm dev:firefox`.
+2. Abre `about:debugging#/runtime/this-firefox`.
+3. Usa **Load Temporary Add-on**.
+4. Selecciona el `manifest.json` dentro de `manual-builder/apps/extension/.output/firefox-mv3-dev`.
 
 ## 6. Controles disponibles
 
 - `ALT + S`: activar o desactivar el selector.
-- `Clic`: seleccionar el elemento resaltado y capturar la pestaña visible.
-- `ESC`: cancelar la selección.
-- `Icono de la extensión`: abrir o reabrir el side panel manualmente.
-- `Limpiar panel`: borrar el historial temporal de la sesión.
+- `Clic`: seleccionar el elemento resaltado y capturar la pestana visible.
+- `ESC`: cancelar la seleccion.
+- `Icono de la extension`: abrir la superficie de revision manualmente.
+- `Activar solo captura`: cambiar a un flujo por lotes desde el panel.
+- `Contexto`: ver el recorte alrededor del elemento.
+- `Pantalla completa`: ver toda la captura con el elemento resaltado.
+- `Agregar al manual`: convertir la captura actual en un paso persistente.
+- `Descartar captura`: eliminar la captura pendiente sin guardarla.
+- `Guardar cambios`: actualizar titulo y descripcion del paso seleccionado.
+- `Subir` y `Bajar`: reordenar pasos del manual.
+- `Guardar datos del manual`: persistir titulo, autor y descripcion del documento.
+- `Abrir vista final`: abrir la composicion final del manual en una pagina de la extension.
+- `Abrir para PDF`: abrir la vista final y lanzar la impresion nativa para guardar PDF.
+- `Exportar JSON`: descargar el borrador completo con metadatos e imagenes embebidas.
+- `Exportar imagenes`: descargar las imagenes originales y recortadas de todos los pasos.
 
 ## 7. Funcionamiento esperado
 
-1. Al cargar una página HTTP o HTTPS, el content script registra en consola:
+1. Al cargar una pagina HTTP o HTTPS, el content script registra:
 
 ```text
-[Manual Builder] Extensión cargada. Presiona ALT + S para seleccionar.
+[Manual Builder] Extension cargada. Presiona ALT + S para seleccionar.
 ```
 
 2. Al presionar `ALT + S`, aparece el aviso flotante del selector.
-3. Mientras el selector está activo, el elemento bajo el cursor se resalta con un overlay fijo.
-4. Al hacer clic, la extensión bloquea la acción normal del elemento y mantiene visible el recuadro sobre el elemento seleccionado.
-5. El content script envía `SelectedElementData` al service worker.
-6. El service worker abre el side panel, captura la pestaña visible y guarda el resultado en memoria de sesión.
-7. El side panel muestra:
+3. Mientras el selector esta activo, el elemento bajo el cursor se resalta con un overlay fijo.
+4. En `Revision paso a paso`, al hacer clic, la extension bloquea la accion normal del elemento y genera `SelectedElementData`.
+5. El content script envia la seleccion al service worker.
+6. El service worker captura la pestana visible y guarda el resultado en memoria de sesion para revision.
+7. La interfaz de revision permite:
+   - Ver la captura en `Contexto` o `Pantalla completa`.
+   - Confirmarla y crear un `ManualStep`.
+   - Descartarla si no sirve.
+8. Si activas `Solo captura`:
+   - La extension deja de abrir la revision automaticamente en cada captura.
+   - Presionas `ALT + S` una vez y puedes seguir capturando varios elementos.
+   - La extension captura primero y luego deja pasar la accion real del elemento seleccionado.
+   - El selector continua activo despues de cada captura hasta que presiones `ESC`.
+   - Las capturas quedan en la cola temporal para revisarlas despues.
+9. Cuando confirmas una captura:
+   - Se genera una imagen contextual optimizada.
+   - Se guarda un paso persistente en `storage.local`.
+   - El paso queda disponible para edicion, reordenacion y exportacion.
+10. El editor de pasos permite:
+   - Cambiar titulo.
+   - Escribir descripcion.
+   - Reordenar o eliminar el paso.
+   - Descargar su imagen de contexto o la original.
+11. La seccion de documento permite:
+   - Definir el titulo general del manual.
+   - Definir el autor.
+   - Agregar una descripcion introductoria.
+   - Abrir la vista final del manual.
+   - Imprimir o guardar PDF usando el dialogo nativo del navegador.
 
-- La imagen capturada.
-- El selector generado.
-- El texto detectado.
-- La URL y el título de la página.
-- La posición del elemento y el viewport.
-- Un historial corto de capturas recientes.
+### Comportamiento por navegador
 
-## 8. Permisos usados en esta etapa
+- Chrome, Chromium y Edge: la revision puede abrirse en panel lateral.
+- Firefox: la extension usa una pestana de revision como fallback compatible.
+- La vista final del manual y la impresion a PDF funcionan como pagina interna de la extension en ambos enfoques.
 
-- `storage`: guardar temporalmente el estado del side panel durante la sesión.
-- `sidePanel`: agregado automáticamente por WXT al incluir el entrypoint del side panel.
-- `host_permissions: <all_urls>`: necesario para `captureVisibleTab()` en este MVP automático.
+## 8. Persistencia usada
+
+- `browser.storage.session`: cola temporal de capturas pendientes de revision.
+- `browser.storage.local`: borrador del manual y pasos confirmados.
 
 ## 9. Limitaciones actuales
 
-- La captura se guarda solo durante la sesión del navegador.
-- No recorta todavía la imagen al elemento seleccionado; captura la pestaña visible completa.
-- No sincroniza capturas entre dispositivos.
-- No envía datos a un backend.
-- No guarda imágenes ni documentos en OneDrive.
-- No genera PDF ni DOCX.
+- El borrador del manual sigue siendo local al navegador actual.
+- Las imagenes originales se capturan como JPEG por compatibilidad amplia con `captureVisibleTab()`.
+- La imagen contextual se intenta guardar como WebP y usa PNG como fallback si el navegador no soporta esa salida.
+- La exportacion PDF depende del motor de impresion del navegador y del destino **Guardar como PDF**.
+- La cola de `solo captura` sigue siendo temporal y depende del presupuesto de memoria de la extension.
+- No existe todavia una plantilla corporativa configurable.
+- No hay sincronizacion entre dispositivos.
+- No se envia informacion a un backend.
+- No se guarda nada en OneDrive.
+- No se generan archivos DOCX.
+- Firefox puede mostrar advertencias de build relacionadas con distribucion, aunque el flujo local sigue funcionando.
 
-## 10. Próxima etapa
+## 10. Proxima etapa
 
-La siguiente iteración debe incorporar:
+La siguiente iteracion deberia incorporar:
 
-- Recorte o marcado adicional del elemento dentro de la captura.
-- Persistencia local más robusta o almacenamiento remoto.
-- Envío de capturas y metadatos a un backend NestJS.
-- Guardado opcional en OneDrive mediante Microsoft Graph.
-- Generación de documentos PDF y DOCX a partir de las capturas seleccionadas.
+- Gestion de manuales por proyecto, no solo un borrador local.
+- Persistencia remota con backend NestJS.
+- Almacenamiento local avanzado o en OneDrive mediante Microsoft Graph.
+- Exportacion DOCX.
+- Ajustes visuales del documento final para portadas, numeracion y plantillas.
 
 ## Pruebas manuales
 
-1. Ejecutar `pnpm dev`.
-2. Abrir una página HTTP o HTTPS.
+1. Ejecutar `pnpm dev` o `pnpm dev:firefox`.
+2. Abrir una pagina HTTP o HTTPS.
 3. Presionar `ALT + S`.
 4. Verificar que aparezca el aviso flotante.
 5. Mover el mouse sobre varios elementos.
 6. Verificar que el recuadro siga correctamente al elemento.
-7. Seleccionar un botón o enlace.
-8. Verificar que el botón o enlace no ejecute su acción.
-9. Confirmar que el side panel se abra o pueda reabrirse desde el icono de la extensión.
-10. Verificar que aparezca una captura de la pestaña visible.
-11. Revisar en el side panel el selector, texto, URL, rectángulo y viewport.
-12. Seleccionar un segundo elemento y confirmar que el historial se actualice.
-13. Presionar nuevamente `ALT + S` y luego `ESC`.
-14. Confirmar que el modo selección se cancela.
-15. Probar en una página con scroll.
-16. Probar después de navegar dentro de una aplicación SPA.
+7. Seleccionar un boton o enlace.
+8. Verificar que en `Revision paso a paso` el boton o enlace no ejecute su accion.
+9. Confirmar que aparezca la captura en la superficie de revision del navegador.
+10. Revisar la vista `Contexto`.
+11. Cambiar a `Pantalla completa`.
+12. Confirmar la captura con `Agregar al manual`.
+13. Verificar que aparezca un paso guardado en la lista.
+14. Editar titulo y descripcion del paso.
+15. Completar titulo, autor y descripcion del manual.
+16. Activar `Solo captura`.
+17. Volver a la pagina y presionar `ALT + S` una sola vez.
+18. Seleccionar varios elementos seguidos y verificar que el selector continue activo y que la accion real de cada clic siga funcionando.
+19. Presionar `ESC` y confirmar que el ciclo de seleccion se detiene.
+20. Revisar luego la cola de capturas pendientes.
+21. Probar `Abrir vista final`.
+22. Probar `Abrir para PDF` y usar **Guardar como PDF**.
+23. Descargar `Exportar JSON`.
+24. Descargar `Exportar imagenes`.
+25. Probar en una pagina con scroll.
+26. Probar despues de navegar dentro de una SPA.

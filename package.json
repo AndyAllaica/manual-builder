@@ -5,10 +5,19 @@
   "packageManager": "pnpm@10.21.0",
   "scripts": {
     "dev": "pnpm --filter manual-builder-extension dev",
+    "dev:chrome": "pnpm --filter manual-builder-extension dev:chrome",
+    "dev:firefox": "pnpm --filter manual-builder-extension dev:firefox",
+    "dev:api": "pnpm --filter manual-builder-api start:dev",
     "build": "pnpm --filter manual-builder-extension build",
+    "build:chrome": "pnpm --filter manual-builder-extension build:chrome",
+    "build:firefox": "pnpm --filter manual-builder-extension build:firefox",
+    "build:api": "pnpm --filter manual-builder-api build",
     "typecheck": "pnpm --filter manual-builder-extension typecheck",
+    "typecheck:api": "pnpm --filter manual-builder-api typecheck",
     "dev:extension": "pnpm --dir apps/extension dev",
+    "dev:api:direct": "pnpm --dir apps/api start:dev",
     "build:extension": "pnpm --dir apps/extension build",
+    "build:api:direct": "pnpm --dir apps/api build",
     "typecheck:extension": "pnpm --dir apps/extension typecheck"
   }
 }

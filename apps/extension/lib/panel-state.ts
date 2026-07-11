@@ -1,4 +1,9 @@
-import { PANEL_STATE_STORAGE_KEY, createEmptyPanelState, type CapturePanelState } from './manual-builder';
+import {
+  PANEL_STATE_STORAGE_KEY,
+  createEmptyPanelState,
+  normalizePanelState,
+  type CapturePanelState,
+} from './manual-builder';
 
 type PanelStateStorageShape = {
   [PANEL_STATE_STORAGE_KEY]?: CapturePanelState;
@@ -6,12 +11,12 @@ type PanelStateStorageShape = {
 
 export async function loadPanelState(): Promise<CapturePanelState> {
   const result = await browser.storage.session.get<PanelStateStorageShape>(PANEL_STATE_STORAGE_KEY);
-  return result[PANEL_STATE_STORAGE_KEY] ?? createEmptyPanelState();
+  return normalizePanelState(result[PANEL_STATE_STORAGE_KEY] ?? createEmptyPanelState());
 }
 
 export async function savePanelState(state: CapturePanelState): Promise<void> {
   await browser.storage.session.set<PanelStateStorageShape>({
-    [PANEL_STATE_STORAGE_KEY]: state,
+    [PANEL_STATE_STORAGE_KEY]: normalizePanelState(state),
   });
 }
 

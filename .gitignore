@@ -2,3 +2,7 @@ node_modules
 dev-root.err.log
 dev-root.out.log
 pnpm-debug.log*
+apps/api/.env
+apps/api/storage/
+apps/api/dist/
+apps/api/coverage/

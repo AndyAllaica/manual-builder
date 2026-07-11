@@ -10,5 +10,10 @@ export default defineConfig({
     action: {
       default_title: 'Manual Builder',
     },
+    browser_specific_settings: {
+      gecko: {
+        id: 'manual-builder@local',
+      },
+    },
   },
 });

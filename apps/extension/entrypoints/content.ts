@@ -1,7 +1,11 @@
 import { defineContentScript } from '#imports';
 import {
+  MESSAGE_TYPE_GET_CAPTURE_MODE,
   MESSAGE_TYPE_SELECTION_CAPTURED,
+  type CaptureMode,
+  type CaptureModeResponse,
   type SelectedElementData,
+  type SelectionCapturedResponse,
 } from '../lib/manual-builder';
 
 interface SelectorController {
@@ -44,6 +48,9 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
   let selectedElement: HTMLElement | null = null;
   let overlayElement: HTMLDivElement | null = null;
   let bannerElement: HTMLDivElement | null = null;
+  let captureMode: CaptureMode = 'review';
+  let passiveCaptureSuppressionDeadline = 0;
+  let captureModeSyncInFlight: Promise<void> | null = null;
 
   const mutationObserver = new MutationObserver(() => {
     hoveredElement = isUsableElement(hoveredElement) ? hoveredElement : null;
@@ -74,7 +81,7 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
       if (selectionModeEnabled) {
         cancelSelectionMode();
       } else {
-        activateSelectionMode();
+        void activateSelectionModeWithFreshMode();
       }
       return;
     }
@@ -95,8 +102,49 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
     refreshOverlayForCurrentTarget();
   };
 
+  const handlePointerDownCapture = (event: PointerEvent): void => {
+    if (!selectionModeEnabled || captureMode !== 'capture-only' || !event.isTrusted || event.button !== 0) {
+      return;
+    }
+
+    const targetElement = resolveSelectableElement(doc, event.clientX, event.clientY);
+    if (targetElement === null) {
+      return;
+    }
+
+    passiveCaptureSuppressionDeadline = event.timeStamp + 800;
+    selectedElement = targetElement;
+    hoveredElement = targetElement;
+    updateOverlay(targetElement);
+
+    const selectedData = buildSelectedElementData(targetElement, win, doc);
+    void submitSelectedElement(selectedData);
+  };
+
   const handleClickCapture = (event: MouseEvent): void => {
-    if (!selectionModeEnabled) {
+    if (!event.isTrusted || !selectionModeEnabled) {
+      return;
+    }
+
+    if (captureMode === 'capture-only') {
+      if (event.timeStamp <= passiveCaptureSuppressionDeadline) {
+        passiveCaptureSuppressionDeadline = 0;
+        return;
+      }
+
+      passiveCaptureSuppressionDeadline = 0;
+
+      const targetElement = resolveSelectableElement(doc, event.clientX, event.clientY);
+      if (targetElement === null) {
+        return;
+      }
+
+      selectedElement = targetElement;
+      hoveredElement = targetElement;
+      updateOverlay(targetElement);
+
+      const selectedData = buildSelectedElementData(targetElement, win, doc);
+      void submitSelectedElement(selectedData);
       return;
     }
 
@@ -116,7 +164,7 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
     deactivateSelectionMode({ preserveSelection: true });
 
     const selectedData = buildSelectedElementData(targetElement, win, doc);
-    handleSelectedElement(selectedData);
+    void submitSelectedElement(selectedData);
   };
 
   const handleViewportChange = (): void => {
@@ -125,9 +173,11 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
 
   ensureUiElements();
   doc.documentElement.setAttribute(ROOT_ATTRIBUTE, 'true');
+  void syncCaptureMode();
 
   doc.addEventListener('keydown', handleKeyDown, true);
   doc.addEventListener('mousemove', handleMouseMove, true);
+  doc.addEventListener('pointerdown', handlePointerDownCapture, true);
   doc.addEventListener('click', handleClickCapture, true);
   win.addEventListener('scroll', handleViewportChange, true);
   win.addEventListener('resize', handleViewportChange);
@@ -145,6 +195,7 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
 
       doc.removeEventListener('keydown', handleKeyDown, true);
       doc.removeEventListener('mousemove', handleMouseMove, true);
+      doc.removeEventListener('pointerdown', handlePointerDownCapture, true);
       doc.removeEventListener('click', handleClickCapture, true);
       win.removeEventListener('scroll', handleViewportChange, true);
       win.removeEventListener('resize', handleViewportChange);
@@ -163,12 +214,18 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
     },
   };
 
+  async function activateSelectionModeWithFreshMode(): Promise<void> {
+    await syncCaptureMode();
+    activateSelectionMode();
+  }
+
   function activateSelectionMode(): void {
     ensureUiElements();
 
     selectionModeEnabled = true;
     hoveredElement = null;
     selectedElement = null;
+    passiveCaptureSuppressionDeadline = 0;
 
     showBanner();
     hideOverlay();
@@ -177,6 +234,7 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
   function deactivateSelectionMode(options: { preserveSelection: boolean }): void {
     selectionModeEnabled = false;
     hoveredElement = null;
+    passiveCaptureSuppressionDeadline = 0;
     hideBanner();
 
     if (options.preserveSelection && isUsableElement(selectedElement)) {
@@ -255,6 +313,54 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
     }
 
     updateOverlay(activeElement);
+  }
+
+  async function submitSelectedElement(data: SelectedElementData): Promise<void> {
+    logSelectedElement(data);
+
+    const response = await notifySelectionCaptured(data);
+    if (!response.keepSelecting) {
+      return;
+    }
+
+    win.setTimeout(() => {
+      if (selectionModeEnabled) {
+        return;
+      }
+
+      activateSelectionMode();
+    }, 180);
+  }
+
+  async function syncCaptureMode(): Promise<void> {
+    if (captureModeSyncInFlight !== null) {
+      return captureModeSyncInFlight;
+    }
+
+    captureModeSyncInFlight = requestCaptureMode()
+      .then((nextMode) => {
+        captureMode = nextMode;
+      })
+      .catch((error: unknown) => {
+        console.warn('[Manual Builder] No se pudo obtener el modo de captura actual.', error);
+      })
+      .finally(() => {
+        captureModeSyncInFlight = null;
+      });
+
+    return captureModeSyncInFlight;
+  }
+
+  async function requestCaptureMode(): Promise<CaptureMode> {
+    const response = await browser.runtime.sendMessage({
+      type: MESSAGE_TYPE_GET_CAPTURE_MODE,
+    });
+
+    if (isCaptureModeResponse(response)) {
+      return response.captureMode;
+    }
+
+    return captureMode;
   }
 }
 
@@ -498,20 +604,64 @@ function buildStructuralSegment(element: HTMLElement): string {
   return `${tagName}:nth-of-type(${position})`;
 }
 
-function handleSelectedElement(data: SelectedElementData): void {
+function logSelectedElement(data: SelectedElementData): void {
   console.group(CONSOLE_GROUP_LABEL);
   console.log(data);
   console.groupEnd();
-  void notifySelectionCaptured(data);
 }
 
-async function notifySelectionCaptured(data: SelectedElementData): Promise<void> {
+async function notifySelectionCaptured(data: SelectedElementData): Promise<SelectionCapturedResponse> {
   try {
-    await browser.runtime.sendMessage({
+    const response = await browser.runtime.sendMessage({
       type: MESSAGE_TYPE_SELECTION_CAPTURED,
       payload: data,
     });
+
+    if (isSelectionCapturedResponse(response)) {
+      return response;
+    }
+
+    return {
+      accepted: true,
+      keepSelecting: false,
+      replayAction: false,
+    };
   } catch (error) {
-    console.error('[Manual Builder] No se pudo enviar la selección al service worker.', error);
+    console.error('[Manual Builder] No se pudo enviar la seleccion al service worker.', error);
+    return {
+      accepted: true,
+      keepSelecting: false,
+      replayAction: false,
+    };
   }
+}
+
+function isSelectionCapturedResponse(value: unknown): value is SelectionCapturedResponse {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as {
+    accepted?: unknown;
+    keepSelecting?: unknown;
+    replayAction?: unknown;
+  };
+
+  return (
+    candidate.accepted === true &&
+    typeof candidate.keepSelecting === 'boolean' &&
+    typeof candidate.replayAction === 'boolean'
+  );
+}
+
+function isCaptureModeResponse(value: unknown): value is CaptureModeResponse {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as {
+    captureMode?: unknown;
+  };
+
+  return candidate.captureMode === 'review' || candidate.captureMode === 'capture-only';
 }
