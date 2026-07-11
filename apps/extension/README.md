@@ -1,4 +1,4 @@
-# Manual Builder Extension MVP 5
+# Manual Builder Extension MVP 6
 
 ## 1. Descripcion del proyecto
 
@@ -15,9 +15,10 @@ Este paquete contiene la extension **Manual Builder** en su etapa actual. Permit
 - Reordenar, eliminar y exportar pasos localmente.
 - Definir metadatos del manual: titulo, autor y descripcion.
 - Abrir una vista final del manual.
-- Imprimir esa vista o guardarla como PDF con la herramienta nativa del navegador.
+- Exportar un PDF profesional A4 horizontal generado por codigo.
+- Imprimir la vista final con la herramienta nativa del navegador como respaldo.
 
-En esta etapa **no** se implementan backend, base de datos, OneDrive ni DOCX.
+La exportacion PDF funciona completamente dentro de la extension y no depende del backend. El workspace contiene un API NestJS/PostgreSQL independiente para una integracion futura; todavia no se usa en este flujo.
 
 ## 2. Requisitos
 
@@ -100,7 +101,8 @@ pnpm build:firefox
 - `Subir` y `Bajar`: reordenar pasos del manual.
 - `Guardar datos del manual`: persistir titulo, autor y descripcion del documento.
 - `Abrir vista final`: abrir la composicion final del manual en una pagina de la extension.
-- `Abrir para PDF`: abrir la vista final y lanzar la impresion nativa para guardar PDF.
+- `Exportar PDF`: generar y descargar el documento profesional desde la vista final.
+- `Imprimir`: abrir el dialogo nativo como alternativa de respaldo.
 - `Exportar JSON`: descargar el borrador completo con metadatos e imagenes embebidas.
 - `Exportar imagenes`: descargar las imagenes originales y recortadas de todos los pasos.
 
@@ -141,7 +143,8 @@ pnpm build:firefox
    - Definir el autor.
    - Agregar una descripcion introductoria.
    - Abrir la vista final del manual.
-   - Imprimir o guardar PDF usando el dialogo nativo del navegador.
+   - Exportar un PDF real con portada y una pagina por paso.
+   - Imprimir usando el dialogo nativo del navegador como respaldo.
 
 ### Comportamiento por navegador
 
@@ -149,17 +152,44 @@ pnpm build:firefox
 - Firefox: la extension usa una pestana de revision como fallback compatible.
 - La vista final del manual y la impresion a PDF funcionan como pagina interna de la extension en ambos enfoques.
 
-## 8. Persistencia usada
+## 8. Exportacion PDF
+
+La generacion se ejecuta en `manual.html`, donde estan disponibles Canvas, Blob y la interfaz de progreso. El service worker no participa en la composicion del archivo.
+
+Caracteristicas principales:
+
+- A4 horizontal con margenes propios, portada y una pagina por paso.
+- Paleta roja, blanca, dorada y acentos verdes para resultados.
+- Captura general sin deformacion, detalle contextual y placeholders cuando falta una imagen.
+- JPEG, PNG y WebP; WebP se convierte mediante Canvas antes de incrustarse.
+- Procesamiento secuencial con limite predeterminado de 1900 px y calidad 0.84.
+- Instrucciones inferidas cuando la descripcion esta vacia o contiene texto de prueba.
+- Compatibilidad con `guide`, `annotationBaked` y alias de imagenes de JSON anteriores.
+- Progreso visible y bloqueo de exportaciones simultaneas.
+
+El codigo esta separado en `lib/pdf`: tipos, tema, texto, contenido, imagenes, generador y descarga. `generateManualPdf()` devuelve `Uint8Array`; `exportManualPdf()` genera el Blob y descarga el archivo.
+
+### Fuentes
+
+Para cobertura Unicode completa agrega estos archivos en `public/fonts`:
+
+- `NotoSans-Regular.ttf`
+- `NotoSans-Bold.ttf`
+
+La ausencia de estos archivos no bloquea la exportacion. Se utiliza Helvetica como fallback y se conservan los caracteres habituales del espanol. Consulta `public/fonts/README.md`.
+
+## 9. Persistencia usada
 
 - `browser.storage.session`: cola temporal de capturas pendientes de revision.
 - `browser.storage.local`: borrador del manual y pasos confirmados.
 
-## 9. Limitaciones actuales
+## 10. Limitaciones actuales
 
 - El borrador del manual sigue siendo local al navegador actual.
 - Las imagenes originales se capturan como JPEG por compatibilidad amplia con `captureVisibleTab()`.
 - La imagen contextual se intenta guardar como WebP y usa PNG como fallback si el navegador no soporta esa salida.
-- La exportacion PDF depende del motor de impresion del navegador y del destino **Guardar como PDF**.
+- Las imagenes siguen embebidas como Data URL en `storage.local`, por lo que manuales extensos pueden alcanzar la cuota del navegador.
+- Helvetica cubre el espanol habitual, pero las fuentes Noto Sans son necesarias para Unicode amplio.
 - La cola de `solo captura` sigue siendo temporal y depende del presupuesto de memoria de la extension.
 - No existe todavia una plantilla corporativa configurable.
 - No hay sincronizacion entre dispositivos.
@@ -168,11 +198,12 @@ pnpm build:firefox
 - No se generan archivos DOCX.
 - Firefox puede mostrar advertencias de build relacionadas con distribucion, aunque el flujo local sigue funcionando.
 
-## 10. Proxima etapa
+## 11. Proxima etapa
 
 La siguiente iteracion deberia incorporar:
 
 - Gestion de manuales por proyecto, no solo un borrador local.
+- Migrar los Blob de imagenes a IndexedDB y conservar solo referencias en el JSON.
 - Persistencia remota con backend NestJS.
 - Almacenamiento local avanzado o en OneDrive mediante Microsoft Graph.
 - Exportacion DOCX.
@@ -201,8 +232,10 @@ La siguiente iteracion deberia incorporar:
 19. Presionar `ESC` y confirmar que el ciclo de seleccion se detiene.
 20. Revisar luego la cola de capturas pendientes.
 21. Probar `Abrir vista final`.
-22. Probar `Abrir para PDF` y usar **Guardar como PDF**.
-23. Descargar `Exportar JSON`.
-24. Descargar `Exportar imagenes`.
-25. Probar en una pagina con scroll.
-26. Probar despues de navegar dentro de una SPA.
+22. Pulsar `Exportar PDF`, observar el progreso y abrir el archivo descargado.
+23. Verificar portada, una pagina por paso, imagenes sin deformacion y texto en espanol.
+24. Probar tambien `Imprimir` como alternativa de respaldo.
+25. Descargar `Exportar JSON`.
+26. Descargar `Exportar imagenes`.
+27. Probar en una pagina con scroll.
+28. Probar despues de navegar dentro de una SPA.

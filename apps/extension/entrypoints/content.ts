@@ -499,6 +499,11 @@ function buildSelectedElementData(
     tagName: element.tagName.toLowerCase(),
     id: normalizeOptionalString(element.id),
     text: extractElementText(element),
+    ariaLabel: normalizeOptionalString(element.getAttribute('aria-label') ?? ''),
+    elementTitle: normalizeOptionalString(element.getAttribute('title') ?? ''),
+    inputType: element instanceof HTMLInputElement
+      ? normalizeOptionalString(element.type)
+      : null,
     selector: buildStableSelector(element),
     url: win.location.href,
     pageTitle: doc.title,

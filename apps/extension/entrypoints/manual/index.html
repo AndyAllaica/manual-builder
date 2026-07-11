@@ -14,13 +14,22 @@
         </div>
         <div class="toolbar-actions">
           <button id="refresh-button" class="secondary-button" type="button">Actualizar</button>
-          <button id="print-button" class="primary-button" type="button">Imprimir / Guardar PDF</button>
+          <button id="pdf-button" class="primary-button" type="button">Exportar PDF</button>
+          <button id="print-button" class="secondary-button" type="button">Imprimir</button>
         </div>
       </header>
 
+      <section id="pdf-status" class="pdf-status" role="status" aria-live="polite" hidden>
+        <div class="pdf-status-copy">
+          <strong id="pdf-status-title">Generando PDF</strong>
+          <span id="pdf-status-message"></span>
+        </div>
+        <progress id="pdf-progress" max="100" value="0"></progress>
+      </section>
+
       <main id="manual-root" class="manual-root">
         <section id="empty-state" class="empty-state" hidden>
-          <h2>No hay pasos para imprimir</h2>
+          <h2>No existen pasos para exportar</h2>
           <p>Regresa al side panel, confirma capturas y vuelve a abrir esta vista.</p>
         </section>
 

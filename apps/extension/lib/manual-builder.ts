@@ -15,11 +15,22 @@ export interface SelectedElementData {
   tagName: string;
   id: string | null;
   text: string | null;
+  ariaLabel?: string | null;
+  elementTitle?: string | null;
+  inputType?: string | null;
   selector: string;
   url: string;
   pageTitle: string;
   rect: SelectionRect;
   viewport: ViewportData;
+}
+
+export interface ManualStepGuide {
+  title?: string;
+  summary?: string;
+  actions?: string[];
+  expectedResult?: string;
+  detailCaption?: string;
 }
 
 export interface CapturedSelectionRecord {
@@ -49,6 +60,9 @@ export interface ManualStep {
   selectedElement: SelectedElementData;
   contextRegion: SelectionRect;
   createdAt: string;
+  updatedAt?: string;
+  annotationBaked?: boolean;
+  guide?: ManualStepGuide;
 }
 
 export interface ManualDraft {

@@ -4,8 +4,10 @@
   --paper: #fffdf9;
   --ink: #1c2b3f;
   --muted: #5f6b7a;
-  --accent: #d94841;
-  --accent-soft: rgba(217, 72, 65, 0.12);
+  --accent: #b4232c;
+  --accent-deep: #650f1a;
+  --success: #16845b;
+  --accent-soft: rgba(180, 35, 44, 0.12);
   --border: rgba(28, 43, 63, 0.12);
   --shadow: 0 18px 44px rgba(28, 43, 63, 0.14);
   --font-body: "Aptos", "Trebuchet MS", "Segoe UI", sans-serif;
@@ -95,6 +97,12 @@ body {
   cursor: pointer;
 }
 
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .primary-button {
   background: var(--accent);
   color: #fff8f5;
@@ -109,6 +117,42 @@ body {
 
 .manual-root {
   margin-top: 18px;
+}
+
+.pdf-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.45fr);
+  align-items: center;
+  gap: 18px;
+  margin-top: 12px;
+  padding: 14px 18px;
+  border: 1px solid rgba(180, 35, 44, 0.18);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.pdf-status[data-state="completed"] {
+  border-color: rgba(22, 132, 91, 0.28);
+}
+
+.pdf-status[data-state="error"] {
+  border-color: rgba(180, 35, 44, 0.5);
+  background: #fff4f3;
+}
+
+.pdf-status-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.pdf-status-copy span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.pdf-status progress {
+  width: 100%;
+  accent-color: var(--accent);
 }
 
 .empty-state {
@@ -266,7 +310,8 @@ body {
 
   .screen-toolbar,
   .step-body,
-  .document-meta {
+  .document-meta,
+  .pdf-status {
     grid-template-columns: 1fr;
   }
 
@@ -295,7 +340,8 @@ body {
     padding: 0;
   }
 
-  .screen-toolbar {
+  .screen-toolbar,
+  .pdf-status {
     display: none;
   }
 

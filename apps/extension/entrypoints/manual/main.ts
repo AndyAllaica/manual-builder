@@ -1,14 +1,21 @@
 import { createEmptyManualDraft, type ManualDraft, type ManualStep } from '../../lib/manual-builder';
 import { loadManualDraft } from '../../lib/manual-step-state';
+import type { ManualPdfProgress } from '../../lib/pdf/manual-pdf.types';
 import './style.css';
 
 const shouldAutoPrint = new URLSearchParams(window.location.search).get('print') === '1';
 
 let currentDraft: ManualDraft = createEmptyManualDraft();
 let hasAutoPrinted = false;
+let pdfExportInProgress = false;
 
 const refreshButton = queryElement<HTMLButtonElement>('refresh-button');
+const pdfButton = queryElement<HTMLButtonElement>('pdf-button');
 const printButton = queryElement<HTMLButtonElement>('print-button');
+const pdfStatus = queryElement<HTMLElement>('pdf-status');
+const pdfStatusTitle = queryElement<HTMLElement>('pdf-status-title');
+const pdfStatusMessage = queryElement<HTMLElement>('pdf-status-message');
+const pdfProgress = queryElement<HTMLProgressElement>('pdf-progress');
 const emptyState = queryElement<HTMLElement>('empty-state');
 const manualDocument = queryElement<HTMLElement>('manual-document');
 const documentTitle = queryElement<HTMLHeadingElement>('document-title');
@@ -24,6 +31,10 @@ void initializePage();
 async function initializePage(): Promise<void> {
   refreshButton.addEventListener('click', () => {
     void refreshView();
+  });
+
+  pdfButton.addEventListener('click', () => {
+    void handlePdfExport();
   });
 
   printButton.addEventListener('click', () => {
@@ -56,6 +67,7 @@ function render(): void {
   emptyState.hidden = hasSteps;
   manualDocument.hidden = !hasSteps;
   printButton.disabled = !hasSteps;
+  pdfButton.disabled = !hasSteps || pdfExportInProgress;
 
   if (!hasSteps) {
     document.title = 'Manual Builder | Sin pasos';
@@ -75,6 +87,71 @@ function render(): void {
   document.title = `Manual Builder | ${currentDraft.title}`;
 
   renderSteps(currentDraft.steps);
+}
+
+async function handlePdfExport(): Promise<void> {
+  if (pdfExportInProgress) {
+    return;
+  }
+  if (currentDraft.steps.length === 0) {
+    showPdfError('No existen pasos para exportar.');
+    return;
+  }
+
+  pdfExportInProgress = true;
+  pdfButton.disabled = true;
+  refreshButton.disabled = true;
+  pdfStatus.hidden = false;
+  pdfStatus.dataset.state = 'working';
+  updatePdfProgress({
+    current: 0,
+    total: currentDraft.steps.length,
+    percentage: 0,
+    stage: 'preparing',
+    message: 'Preparando el manual...',
+  });
+
+  try {
+    const { exportManualPdf } = await import('../../lib/pdf/manual-pdf.download');
+    await exportManualPdf(currentDraft, {
+      includeCover: true,
+      drawSelectionHighlight: 'auto',
+      imageQuality: 0.84,
+      maxImageDimension: 1900,
+      fileName: currentDraft.title,
+      fontUrls: {
+        regular: getRuntimeUrl('/fonts/NotoSans-Regular.ttf'),
+        bold: getRuntimeUrl('/fonts/NotoSans-Bold.ttf'),
+      },
+      onProgress: updatePdfProgress,
+    });
+  } catch (error) {
+    showPdfError(getErrorMessage(error));
+  } finally {
+    pdfExportInProgress = false;
+    pdfButton.disabled = currentDraft.steps.length === 0;
+    refreshButton.disabled = false;
+  }
+}
+
+function updatePdfProgress(progress: ManualPdfProgress): void {
+  pdfStatus.hidden = false;
+  pdfStatus.dataset.state = progress.stage === 'completed' ? 'completed' : 'working';
+  pdfStatusTitle.textContent = progress.stage === 'completed'
+    ? 'PDF generado'
+    : progress.stage === 'step'
+      ? `Paso ${progress.current} de ${progress.total}`
+      : 'Generando PDF';
+  pdfStatusMessage.textContent = progress.message;
+  pdfProgress.value = progress.percentage;
+}
+
+function showPdfError(message: string): void {
+  pdfStatus.hidden = false;
+  pdfStatus.dataset.state = 'error';
+  pdfStatusTitle.textContent = 'No se pudo exportar el PDF';
+  pdfStatusMessage.textContent = message;
+  pdfProgress.removeAttribute('value');
 }
 
 function renderSteps(steps: ManualStep[]): void {
@@ -199,6 +276,14 @@ function formatTimestamp(isoDate: string): string {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Ocurrió un error inesperado durante la exportación.';
+}
+
+function getRuntimeUrl(path: string): string {
+  return (browser.runtime.getURL as (resourcePath: string) => string)(path);
 }
 
 function queryElement<TElement extends HTMLElement>(id: string): TElement {
