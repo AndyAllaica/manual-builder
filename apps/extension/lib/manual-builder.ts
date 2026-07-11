@@ -184,7 +184,7 @@ export function createManualStep(input: {
   return {
     id: crypto.randomUUID(),
     order,
-    title: clampText(title, MAX_STEP_TITLE_LENGTH) ?? `Paso ${order}`,
+    title: sanitizeStepTitle(title) || 'Elemento seleccionado',
     description: clampText(description, MAX_STEP_DESCRIPTION_LENGTH) ?? '',
     selector: capture.selectedElement.selector,
     url: capture.selectedElement.url,
@@ -233,6 +233,7 @@ export function resequenceManualSteps(steps: ManualStep[]): ManualStep[] {
   return steps.map((step, index) => ({
     ...step,
     order: index + 1,
+    title: sanitizeStepTitle(step.title) || buildFallbackStepTitle(step),
   }));
 }
 
@@ -296,18 +297,26 @@ export function getImageExtension(format: ImageAssetFormat): string {
   }
 }
 
-export function buildStepTitleSuggestion(capture: CapturedSelectionRecord, nextOrder: number): string {
+export function buildStepTitleSuggestion(capture: CapturedSelectionRecord): string {
   const candidate =
     clampText(capture.selectedElement.text, 56) ??
     clampText(capture.selectedElement.id, 32) ??
     clampText(capture.selectedElement.pageTitle, 48) ??
     capture.selectedElement.tagName;
 
-  return clampText(`Paso ${nextOrder}: ${candidate}`, MAX_STEP_TITLE_LENGTH) ?? `Paso ${nextOrder}`;
+  return sanitizeStepTitle(candidate) || 'Elemento seleccionado';
 }
 
 export function sanitizeStepTitle(value: string): string {
-  return clampText(value, MAX_STEP_TITLE_LENGTH) ?? '';
+  return clampText(stripStepNumberPrefix(value), MAX_STEP_TITLE_LENGTH) ?? '';
+}
+
+export function stripStepNumberPrefix(value: string): string {
+  return value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^(?:paso\s+\d+\s*:\s*)+/i, '')
+    .trim();
 }
 
 export function sanitizeStepDescription(value: string): string {
@@ -344,6 +353,21 @@ export function isGetCaptureModeMessage(value: unknown): value is GetCaptureMode
 
 function estimateDataUrlSize(dataUrl: string): number {
   return Math.ceil((dataUrl.length * 3) / 4);
+}
+
+function buildFallbackStepTitle(step: ManualStep): string {
+  for (const candidate of [step.selectedElement.text, step.pageTitle, step.selectedElement.tagName]) {
+    if (candidate === null) {
+      continue;
+    }
+
+    const title = sanitizeStepTitle(candidate);
+    if (title.length > 0) {
+      return title;
+    }
+  }
+
+  return 'Elemento seleccionado';
 }
 
 function normalizeRect(rect: SelectionRect): SelectionRect {

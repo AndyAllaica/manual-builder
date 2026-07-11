@@ -98,6 +98,8 @@ pnpm build:firefox
 - `Agregar al manual`: convertir la captura actual en un paso persistente.
 - `Descartar captura`: eliminar la captura pendiente sin guardarla.
 - `Guardar cambios`: actualizar titulo y descripcion del paso seleccionado.
+- `Arrastrar un paso`: cambiar su posicion y renumerar automaticamente todos los pasos.
+- Los titulos guardados no incluyen `Paso n:`; ese prefijo se agrega dinamicamente solo al generar el PDF.
 - `Subir` y `Bajar`: reordenar pasos del manual.
 - `Guardar datos del manual`: persistir titulo, autor y descripcion del documento.
 - `Abrir vista final`: abrir la composicion final del manual en una pagina de la extension.
@@ -225,17 +227,18 @@ La siguiente iteracion deberia incorporar:
 12. Confirmar la captura con `Agregar al manual`.
 13. Verificar que aparezca un paso guardado en la lista.
 14. Editar titulo y descripcion del paso.
-15. Completar titulo, autor y descripcion del manual.
-16. Activar `Solo captura`.
-17. Volver a la pagina y presionar `ALT + S` una sola vez.
-18. Seleccionar varios elementos seguidos y verificar que el selector continue activo y que la accion real de cada clic siga funcionando.
-19. Presionar `ESC` y confirmar que el ciclo de seleccion se detiene.
-20. Revisar luego la cola de capturas pendientes.
-21. Probar `Abrir vista final`.
-22. Pulsar `Exportar PDF`, observar el progreso y abrir el archivo descargado.
-23. Verificar portada, una pagina por paso, imagenes sin deformacion y texto en espanol.
-24. Probar tambien `Imprimir` como alternativa de respaldo.
-25. Descargar `Exportar JSON`.
-26. Descargar `Exportar imagenes`.
-27. Probar en una pagina con scroll.
-28. Probar despues de navegar dentro de una SPA.
+15. Arrastrar un paso antes o despues de otro y verificar que todos los numeros se actualicen.
+16. Completar titulo, autor y descripcion del manual.
+17. Activar `Solo captura`.
+18. Volver a la pagina y presionar `ALT + S` una sola vez.
+19. Seleccionar varios elementos seguidos y verificar que el selector continue activo y que la accion real de cada clic siga funcionando.
+20. Presionar `ESC` y confirmar que el ciclo de seleccion se detiene.
+21. Revisar luego la cola de capturas pendientes.
+22. Probar `Abrir vista final`.
+23. Pulsar `Exportar PDF`, observar el progreso y abrir el archivo descargado.
+24. Verificar portada, una pagina por paso, imagenes sin deformacion y texto en espanol.
+25. Probar tambien `Imprimir` como alternativa de respaldo.
+26. Descargar `Exportar JSON`.
+27. Descargar `Exportar imagenes`.
+28. Probar en una pagina con scroll.
+29. Probar despues de navegar dentro de una SPA.

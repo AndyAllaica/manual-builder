@@ -26,6 +26,7 @@ import { loadManualDraft, resetManualDraft, saveManualDraft } from '../../lib/ma
 import './style.css';
 
 type PreviewMode = 'context' | 'full';
+type StepDropPosition = 'before' | 'after';
 
 interface ImageScale {
   x: number;
@@ -59,6 +60,8 @@ let currentDraft: ManualDraft = createEmptyManualDraft();
 let selectedCaptureId: string | null = null;
 let selectedStepId: string | null = null;
 let previewMode: PreviewMode = 'context';
+let draggedStepId: string | null = null;
+let stepDragJustFinished = false;
 let previewRenderToken = 0;
 let panelBusy = false;
 let stepFormStepId: string | null = null;
@@ -504,11 +507,73 @@ function renderStepsList(selectedStep: ManualStep | null): void {
     button.type = 'button';
     button.className = step.id === selectedStep?.id ? 'step-item is-active' : 'step-item';
     button.disabled = panelBusy;
+    button.draggable = !panelBusy;
+    button.dataset.stepId = step.id;
+    button.title = `Paso ${step.order}. Arrastra para reordenar o haz clic para editar.`;
+    button.setAttribute('aria-label', `Paso ${step.order}: ${step.title}. Arrastra para reordenar.`);
     button.addEventListener('click', () => {
+      if (stepDragJustFinished) {
+        stepDragJustFinished = false;
+        return;
+      }
+
       selectedStepId = step.id;
       stepFormDirty = false;
       syncStepFormState(step);
       render();
+    });
+    button.addEventListener('dragstart', (event) => {
+      if (panelBusy) {
+        event.preventDefault();
+        return;
+      }
+
+      draggedStepId = step.id;
+      button.classList.add('is-dragging');
+      stepsList.classList.add('is-reordering');
+      event.dataTransfer?.setData('text/plain', step.id);
+      if (event.dataTransfer !== null) {
+        event.dataTransfer.effectAllowed = 'move';
+      }
+    });
+    button.addEventListener('dragover', (event) => {
+      if (draggedStepId === null || draggedStepId === step.id || panelBusy) {
+        return;
+      }
+
+      event.preventDefault();
+      if (event.dataTransfer !== null) {
+        event.dataTransfer.dropEffect = 'move';
+      }
+      showStepDropIndicator(button, getStepDropPosition(button, event.clientY));
+    });
+    button.addEventListener('dragleave', (event) => {
+      if (event.relatedTarget instanceof Node && button.contains(event.relatedTarget)) {
+        return;
+      }
+      clearStepDropIndicator(button);
+    });
+    button.addEventListener('drop', (event) => {
+      event.preventDefault();
+      const sourceStepId = draggedStepId ?? event.dataTransfer?.getData('text/plain') ?? null;
+      const dropPosition = getStepDropPosition(button, event.clientY);
+      clearStepDragState();
+
+      if (sourceStepId === null || sourceStepId === step.id) {
+        return;
+      }
+
+      stepDragJustFinished = true;
+      void runPanelAction(async () => {
+        await reorderStepByDrop(sourceStepId, step.id, dropPosition);
+      });
+    });
+    button.addEventListener('dragend', () => {
+      stepDragJustFinished = stepDragJustFinished || draggedStepId !== null;
+      clearStepDragState();
+      window.setTimeout(() => {
+        stepDragJustFinished = false;
+      }, 0);
     });
 
     const orderBadge = document.createElement('span');
@@ -527,8 +592,13 @@ function renderStepsList(selectedStep: ManualStep | null): void {
     const description = document.createElement('span');
     description.textContent = step.description || step.pageTitle;
 
+    const dragHandle = document.createElement('span');
+    dragHandle.className = 'step-drag-handle';
+    dragHandle.textContent = '⋮⋮';
+    dragHandle.setAttribute('aria-hidden', 'true');
+
     copy.append(title, subtitle, description);
-    button.append(orderBadge, copy);
+    button.append(orderBadge, copy, dragHandle);
     fragment.appendChild(button);
   }
 
@@ -603,7 +673,7 @@ async function handleConfirmSelectedCapture(): Promise<void> {
   const nextStep = createManualStep({
     capture,
     order: nextOrder,
-    title: buildStepTitleSuggestion(capture, nextOrder),
+    title: buildStepTitleSuggestion(capture),
     description: '',
     imageContextDataUrl: contextAsset.dataUrl,
     imageContextFormat: contextAsset.format,
@@ -645,7 +715,7 @@ async function handleSaveSelectedStep(): Promise<void> {
     return;
   }
 
-  const title = sanitizeStepTitle(stepFormTitle) || `Paso ${selectedStep.order}`;
+  const title = sanitizeStepTitle(stepFormTitle) || 'Elemento seleccionado';
   const description = sanitizeStepDescription(stepFormDescription);
 
   const nextSteps = manualDraft.steps.map((step) => (
@@ -692,6 +762,62 @@ async function moveSelectedStep(direction: -1 | 1): Promise<void> {
     steps: nextSteps,
   });
   await refreshState();
+}
+
+async function reorderStepByDrop(
+  sourceStepId: string,
+  targetStepId: string,
+  position: StepDropPosition,
+): Promise<void> {
+  await persistPendingEditsIfNeeded();
+  const manualDraft = await loadManualDraft();
+  const sourceIndex = manualDraft.steps.findIndex((step) => step.id === sourceStepId);
+  const targetIndex = manualDraft.steps.findIndex((step) => step.id === targetStepId);
+
+  if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) {
+    await refreshState();
+    return;
+  }
+
+  const nextSteps = [...manualDraft.steps];
+  const [movedStep] = nextSteps.splice(sourceIndex, 1);
+  if (movedStep === undefined) {
+    return;
+  }
+
+  const adjustedTargetIndex = nextSteps.findIndex((step) => step.id === targetStepId);
+  const insertionIndex = position === 'after' ? adjustedTargetIndex + 1 : adjustedTargetIndex;
+  nextSteps.splice(insertionIndex, 0, movedStep);
+
+  await saveManualDraft({
+    ...manualDraft,
+    steps: nextSteps,
+  });
+  await refreshState();
+}
+
+function getStepDropPosition(button: HTMLButtonElement, clientY: number): StepDropPosition {
+  const rect = button.getBoundingClientRect();
+  return clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+}
+
+function showStepDropIndicator(button: HTMLButtonElement, position: StepDropPosition): void {
+  for (const item of stepsList.querySelectorAll('.step-item')) {
+    item.classList.remove('is-drop-before', 'is-drop-after');
+  }
+  button.classList.add(position === 'before' ? 'is-drop-before' : 'is-drop-after');
+}
+
+function clearStepDropIndicator(button: HTMLButtonElement): void {
+  button.classList.remove('is-drop-before', 'is-drop-after');
+}
+
+function clearStepDragState(): void {
+  draggedStepId = null;
+  stepsList.classList.remove('is-reordering');
+  for (const item of stepsList.querySelectorAll('.step-item')) {
+    item.classList.remove('is-dragging', 'is-drop-before', 'is-drop-after');
+  }
 }
 
 async function handleDeleteSelectedStep(): Promise<void> {
@@ -886,7 +1012,7 @@ async function persistPendingEditsIfNeeded(): Promise<void> {
         step.id === selectedStepId
           ? {
               ...step,
-              title: sanitizeStepTitle(stepFormTitle) || `Paso ${step.order}`,
+              title: sanitizeStepTitle(stepFormTitle) || 'Elemento seleccionado',
               description: sanitizeStepDescription(stepFormDescription),
             }
           : step

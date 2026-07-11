@@ -254,7 +254,7 @@ async function drawStepPage(
     bold: true,
     maxLines: 1,
   });
-  drawTextBox(page, content.title, fonts, theme, {
+  drawTextBox(page, `Paso ${current}: ${content.title}`, fonts, theme, {
     x: 96,
     top: 535,
     width: 565,

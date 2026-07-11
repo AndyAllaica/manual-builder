@@ -1,4 +1,4 @@
-import type { ManualStepGuide, SelectionRect, ViewportData } from '../manual-builder';
+import { stripStepNumberPrefix, type ManualStepGuide, type SelectionRect, type ViewportData } from '../manual-builder';
 import { normalizeWhitespace, truncateText } from './manual-pdf.text';
 import type {
   CompatibleManualStep,
@@ -51,13 +51,13 @@ export function resolveStepContent(step: ResolvedManualStep): ResolvedStepConten
   const guide = normalizeGuide(step.guide);
   const element = step.selectedElement;
   const label = resolveElementLabel(element, step);
-  const title = firstUsableText(
+  const title = stripStepNumberPrefix(firstUsableText(
     guide?.title,
     step.title,
     label,
     step.pageTitle,
-    `Paso ${step.order}`,
-  );
+    'Acción sin título',
+  ));
   const summary = firstUsableText(
     guide?.summary,
     isUsableInstructionText(step.description) ? step.description : undefined,
@@ -169,7 +169,7 @@ function resolveStep(step: CompatibleManualStep, index: number): ResolvedManualS
   return {
     id: normalizeWhitespace(step.id) || `step-${fallbackOrder}`,
     order: Number.isFinite(step.order) && (step.order ?? 0) > 0 ? Math.trunc(step.order ?? fallbackOrder) : fallbackOrder,
-    title: normalizeWhitespace(step.title),
+    title: stripStepNumberPrefix(normalizeWhitespace(step.title)),
     description: normalizeWhitespace(step.description),
     createdAt: normalizeWhitespace(step.createdAt),
     updatedAt: normalizeWhitespace(step.updatedAt),
