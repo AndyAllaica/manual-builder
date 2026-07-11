@@ -4,9 +4,11 @@ import type { ManualPdfProgress } from '../../lib/pdf/manual-pdf.types';
 import './style.css';
 
 const shouldAutoPrint = new URLSearchParams(window.location.search).get('print') === '1';
+const shouldAutoExportPdf = new URLSearchParams(window.location.search).get('exportPdf') === '1';
 
 let currentDraft: ManualDraft = createEmptyManualDraft();
 let hasAutoPrinted = false;
+let hasAutoExportedPdf = false;
 let pdfExportInProgress = false;
 
 const refreshButton = queryElement<HTMLButtonElement>('refresh-button');
@@ -60,6 +62,7 @@ async function refreshView(): Promise<void> {
   currentDraft = await loadManualDraft();
   render();
   void maybeAutoPrint();
+  void maybeAutoExportPdf();
 }
 
 function render(): void {
@@ -132,6 +135,15 @@ async function handlePdfExport(): Promise<void> {
     pdfButton.disabled = currentDraft.steps.length === 0;
     refreshButton.disabled = false;
   }
+}
+
+async function maybeAutoExportPdf(): Promise<void> {
+  if (!shouldAutoExportPdf || hasAutoExportedPdf || currentDraft.steps.length === 0) {
+    return;
+  }
+
+  hasAutoExportedPdf = true;
+  await handlePdfExport();
 }
 
 function updatePdfProgress(progress: ManualPdfProgress): void {

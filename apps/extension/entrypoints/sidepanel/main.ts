@@ -791,7 +791,7 @@ async function handleExportManualImages(): Promise<void> {
   }
 }
 
-async function openManualPage(printMode: boolean): Promise<void> {
+async function openManualPage(exportPdf: boolean): Promise<void> {
   await persistPendingEditsIfNeeded();
 
   if (currentDraft.steps.length === 0) {
@@ -799,8 +799,8 @@ async function openManualPage(printMode: boolean): Promise<void> {
   }
 
   const targetUrl = new URL(getManualPageUrl());
-  if (printMode) {
-    targetUrl.searchParams.set('print', '1');
+  if (exportPdf) {
+    targetUrl.searchParams.set('exportPdf', '1');
   }
 
   window.open(targetUrl.toString(), '_blank', 'noopener');

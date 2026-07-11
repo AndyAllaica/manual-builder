@@ -101,7 +101,7 @@ pnpm build:firefox
 - `Subir` y `Bajar`: reordenar pasos del manual.
 - `Guardar datos del manual`: persistir titulo, autor y descripcion del documento.
 - `Abrir vista final`: abrir la composicion final del manual en una pagina de la extension.
-- `Exportar PDF`: generar y descargar el documento profesional desde la vista final.
+- `Exportar PDF`: abrir la vista final e iniciar automaticamente la misma exportacion profesional disponible en esa pagina.
 - `Imprimir`: abrir el dialogo nativo como alternativa de respaldo.
 - `Exportar JSON`: descargar el borrador completo con metadatos e imagenes embebidas.
 - `Exportar imagenes`: descargar las imagenes originales y recortadas de todos los pasos.
