@@ -13,11 +13,14 @@ En esta etapa el API ya permite:
 - Registrar capturas pendientes, aprobadas o descartadas.
 - Convertir capturas en pasos del manual.
 - Servir los assets guardados mediante URLs locales bajo `/uploads/...`.
+- Registrar usuarios con login simple.
+- Restringir catalogo, manuales y capturas por membresia de workspace.
+- Compartir workspaces con otros usuarios por `username`.
 
 Todavia **no** incluye:
 
 - Autenticacion CAS.
-- JWT u otro login institucional.
+- OIDC ni login institucional.
 - OneDrive o Microsoft Graph.
 - Generacion DOCX o PDF en backend.
 
@@ -46,6 +49,8 @@ Variables principales:
 - `DEFAULT_WORKSPACE_NAME`, `DEFAULT_WORKSPACE_DESCRIPTION`: workspace inicial que el sistema crea si la base esta vacia.
 - `STORAGE_ROOT`: carpeta local donde se guardan las imagenes.
 - `MAX_ASSET_SIZE_MB`: limite de peso por imagen recibida.
+- `AUTH_TOKEN_SECRET`: secreto para firmar tokens Bearer del login simple.
+- `AUTH_TOKEN_TTL_SECONDS`: duracion del token en segundos. Por defecto, 8 horas.
 
 ## Base de datos institucional
 
@@ -62,6 +67,14 @@ Se incluye un script base en:
 ```text
 apps/api/database/create-database.sql
 ```
+
+Para una base que ya existe y no usa `DB_SYNCHRONIZE=true`, aplica tambien:
+
+```text
+apps/api/database/2026-07-12-auth-workspaces.sql
+```
+
+Si dejas `DB_SYNCHRONIZE=true`, TypeORM crea las tablas `users` y `workspace_members` al levantar el backend. En bases institucionales conviene usar el SQL y luego mantener `DB_SYNCHRONIZE=false`.
 
 ## Instalacion
 
@@ -107,9 +120,22 @@ http://localhost:3001/uploads/
 
 - `GET /api`
 
+### Autenticacion
+
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `GET /api/v1/auth/me`
+
+### Workspaces
+
+- `GET /api/v1/workspaces`
+- `POST /api/v1/workspaces`
+- `GET /api/v1/workspaces/:workspaceId/members`
+- `POST /api/v1/workspaces/:workspaceId/members`
+
 ### Catalogo
 
-- `GET /api/v1/catalog/workspace`
+- `GET /api/v1/catalog/workspaces/:workspaceId`
 - `GET /api/v1/catalog/systems/:systemId`
 - `POST /api/v1/catalog/systems`
 - `POST /api/v1/catalog/modules`
@@ -132,15 +158,17 @@ http://localhost:3001/uploads/
 
 ## Flujo recomendado
 
-1. Consultar `GET /api/v1/catalog/workspace` para obtener el workspace inicial.
-2. Crear un sistema con `POST /api/v1/catalog/systems`.
-3. Crear un modulo con `POST /api/v1/catalog/modules`.
-4. Crear una accion con `POST /api/v1/catalog/actions`.
-5. Crear un manual con `POST /api/v1/manuals`.
-6. Abrir una sesion de captura con `POST /api/v1/capture-sessions`.
-7. Enviar capturas desde la extension usando `POST /api/v1/capture-sessions/:sessionId/captures`.
-8. Revisar o descartar con `PATCH /api/v1/capture-sessions/captures/:captureId`.
-9. Convertir una captura aprobada en paso con `POST /api/v1/manuals/:manualId/steps/from-capture`.
+1. Registrar o iniciar sesion con `POST /api/v1/auth/register` o `POST /api/v1/auth/login`.
+2. Usar el `accessToken` como `Authorization: Bearer <token>`.
+3. Consultar `GET /api/v1/workspaces`.
+4. Crear un workspace con `POST /api/v1/workspaces` si el usuario no tiene uno.
+5. Consultar `GET /api/v1/catalog/workspaces/:workspaceId`.
+6. Crear sistema, modulo y accion.
+7. Crear un manual con `POST /api/v1/manuals`.
+8. Abrir una sesion de captura con `POST /api/v1/capture-sessions`.
+9. Enviar capturas desde la extension usando `POST /api/v1/capture-sessions/:sessionId/captures`.
+10. Revisar o descartar con `PATCH /api/v1/capture-sessions/captures/:captureId`.
+11. Convertir una captura aprobada en paso con `POST /api/v1/manuals/:manualId/steps/from-capture`.
 
 ## Formato de captura
 
@@ -171,8 +199,8 @@ Ejemplo:
 
 ## Siguiente etapa recomendada
 
-1. Conectar la extension directamente a este API.
-2. Crear autenticacion institucional.
+1. Crear administracion visual de usuarios y roles.
+2. Evaluar CAS/OIDC solo si el uso temporal pasa a produccion formal.
 3. Agregar proveedor de almacenamiento OneDrive / SharePoint.
 4. Incorporar versionado real de manuales y reorder de pasos.
 5. Luego generar PDF y DOCX.

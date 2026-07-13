@@ -1,8 +1,10 @@
 import {
+  BACKEND_SYNC_SETTINGS_STORAGE_KEY,
   MANUAL_DRAFT_STORAGE_KEY,
   MESSAGE_TYPE_CLEAR_CAPTURES,
   PANEL_STATE_STORAGE_KEY,
   buildStepTitleSuggestion,
+  createEmptyBackendSyncSettings,
   createEmptyManualDraft,
   createEmptyPanelState,
   createManualStep,
@@ -12,6 +14,7 @@ import {
   sanitizeManualTitle,
   sanitizeStepDescription,
   sanitizeStepTitle,
+  type BackendSyncSettings,
   type CapturePanelState,
   type CaptureMode,
   type CapturedSelectionRecord,
@@ -19,8 +22,25 @@ import {
   type ManualDraft,
   type ManualStep,
   type ReviewSurface,
+  type SelectedElementData,
   type SelectionRect,
 } from '../../lib/manual-builder';
+import { loadBackendSyncSettings, saveBackendSyncSettings } from '../../lib/backend-sync-state';
+import {
+  buildRemoteCapturePayload,
+  createManualBuilderApiClient,
+  type RemoteAuthResponse,
+  type RemoteActionSummary,
+  type RemoteAssetRecord,
+  type RemoteManualDetail,
+  type RemoteManualSummary,
+  type RemoteManualStepWithAsset,
+  type RemoteWorkspaceMemberRole,
+  type RemoteWorkspaceRecord,
+  type RemoteSystemModuleSummary,
+  type RemoteSystemSummary,
+  type WorkspaceOverview,
+} from '../../lib/manual-builder-api';
 import { loadPanelState, savePanelState } from '../../lib/panel-state';
 import { loadManualDraft, resetManualDraft, saveManualDraft } from '../../lib/manual-step-state';
 import './style.css';
@@ -40,6 +60,11 @@ interface PixelRect {
   height: number;
 }
 
+interface GeneratedImageAsset {
+  dataUrl: string;
+  format: ImageAssetFormat;
+}
+
 interface ExportedManualDocument {
   exportedAt: string;
   generatedBy: 'Manual Builder';
@@ -54,9 +79,11 @@ interface ExportedManualDocument {
 }
 
 const MANUAL_PAGE_PATH = '/manual.html' as const;
+const DEFAULT_REMOTE_FRAMING = 'context' as const;
 
 let currentState: CapturePanelState = createEmptyPanelState();
 let currentDraft: ManualDraft = createEmptyManualDraft();
+let currentBackendSettings: BackendSyncSettings = createEmptyBackendSyncSettings();
 let selectedCaptureId: string | null = null;
 let selectedStepId: string | null = null;
 let previewMode: PreviewMode = 'context';
@@ -72,6 +99,29 @@ let manualTitleDraft = '';
 let manualAuthorDraft = '';
 let manualDescriptionDraft = '';
 let manualMetaDirty = false;
+let backendSyncEnabledDraft = false;
+let backendApiBaseUrlDraft = '';
+let backendAuthTokenDraft: string | null = null;
+let backendUserIdDraft: string | null = null;
+let backendUsernameDraft = '';
+let backendDisplayNameDraft = '';
+let backendPasswordDraft = '';
+let backendStartedByDraft = '';
+let backendWorkspaceIdDraft = '';
+let backendSystemIdDraft = '';
+let backendModuleIdDraft = '';
+let backendActionIdDraft = '';
+let backendManualIdDraft = '';
+let backendSettingsDirty = false;
+let backendCatalog: WorkspaceOverview | null = null;
+let backendWorkspaces: RemoteWorkspaceRecord[] = [];
+let backendManuals: RemoteManualSummary[] = [];
+let newWorkspaceNameDraft = '';
+let newSystemNameDraft = '';
+let newModuleNameDraft = '';
+let newActionNameDraft = '';
+let collaboratorUsernameDraft = '';
+let collaboratorRoleDraft: RemoteWorkspaceMemberRole = 'editor';
 
 const captureImageCache = new Map<string, Promise<HTMLImageElement>>();
 
@@ -82,6 +132,34 @@ const summaryText = queryElement<HTMLParagraphElement>('summary-text');
 const captureModeTitle = queryElement<HTMLHeadingElement>('capture-mode-title');
 const captureModeText = queryElement<HTMLParagraphElement>('capture-mode-text');
 const toggleCaptureModeButton = queryElement<HTMLButtonElement>('toggle-capture-mode-button');
+const backendSyncEnabledInput = queryElement<HTMLInputElement>('backend-sync-enabled-input');
+const backendApiUrlInput = queryElement<HTMLInputElement>('backend-api-url-input');
+const backendUsernameInput = queryElement<HTMLInputElement>('backend-username-input');
+const backendPasswordInput = queryElement<HTMLInputElement>('backend-password-input');
+const backendStartedByInput = queryElement<HTMLInputElement>('backend-started-by-input');
+const backendWorkspaceSelect = queryElement<HTMLSelectElement>('backend-workspace-select');
+const backendSystemSelect = queryElement<HTMLSelectElement>('backend-system-select');
+const backendModuleSelect = queryElement<HTMLSelectElement>('backend-module-select');
+const backendActionSelect = queryElement<HTMLSelectElement>('backend-action-select');
+const backendManualSelect = queryElement<HTMLSelectElement>('backend-manual-select');
+const newWorkspaceNameInput = queryElement<HTMLInputElement>('new-workspace-name-input');
+const newSystemNameInput = queryElement<HTMLInputElement>('new-system-name-input');
+const newModuleNameInput = queryElement<HTMLInputElement>('new-module-name-input');
+const newActionNameInput = queryElement<HTMLInputElement>('new-action-name-input');
+const createSystemButton = queryElement<HTMLButtonElement>('create-system-button');
+const createWorkspaceButton = queryElement<HTMLButtonElement>('create-workspace-button');
+const createModuleButton = queryElement<HTMLButtonElement>('create-module-button');
+const createActionButton = queryElement<HTMLButtonElement>('create-action-button');
+const collaboratorUsernameInput = queryElement<HTMLInputElement>('collaborator-username-input');
+const collaboratorRoleSelect = queryElement<HTMLSelectElement>('collaborator-role-select');
+const addCollaboratorButton = queryElement<HTMLButtonElement>('add-collaborator-button');
+const backendSyncStatusText = queryElement<HTMLParagraphElement>('backend-sync-status-text');
+const backendLoginButton = queryElement<HTMLButtonElement>('backend-login-button');
+const backendRegisterButton = queryElement<HTMLButtonElement>('backend-register-button');
+const saveBackendSettingsButton = queryElement<HTMLButtonElement>('save-backend-settings-button');
+const validateBackendButton = queryElement<HTMLButtonElement>('validate-backend-button');
+const createRemoteManualButton = queryElement<HTMLButtonElement>('create-remote-manual-button');
+const loadRemoteManualButton = queryElement<HTMLButtonElement>('load-remote-manual-button');
 const pendingSection = queryElement<HTMLElement>('pending-section');
 const pendingSelector = queryElement<HTMLParagraphElement>('pending-selector');
 const errorSection = queryElement<HTMLElement>('error-section');
@@ -148,6 +226,109 @@ async function initializeSidePanel(): Promise<void> {
     void runPanelAction(handleToggleCaptureMode);
   });
 
+  backendSyncEnabledInput.addEventListener('change', () => {
+    backendSyncEnabledDraft = backendSyncEnabledInput.checked;
+    backendSettingsDirty = true;
+    renderBackendSyncSection();
+  });
+
+  backendApiUrlInput.addEventListener('input', () => {
+    backendApiBaseUrlDraft = backendApiUrlInput.value;
+    backendSettingsDirty = true;
+    renderBackendSyncSection();
+  });
+
+  backendUsernameInput.addEventListener('input', () => {
+    backendUsernameDraft = backendUsernameInput.value;
+    backendSettingsDirty = true;
+    renderBackendSyncSection();
+  });
+
+  backendPasswordInput.addEventListener('input', () => {
+    backendPasswordDraft = backendPasswordInput.value;
+    renderBackendSyncSection();
+  });
+
+  backendStartedByInput.addEventListener('input', () => {
+    backendStartedByDraft = backendStartedByInput.value;
+    backendSettingsDirty = true;
+    renderBackendSyncSection();
+  });
+
+  backendWorkspaceSelect.addEventListener('change', () => {
+    backendWorkspaceIdDraft = backendWorkspaceSelect.value;
+    backendSystemIdDraft = '';
+    backendModuleIdDraft = '';
+    backendActionIdDraft = '';
+    backendManualIdDraft = '';
+    backendCatalog = null;
+    backendManuals = [];
+    backendSettingsDirty = true;
+    void runPanelAction(loadBackendCatalogForDraft);
+  });
+
+  backendSystemSelect.addEventListener('change', () => {
+    backendSystemIdDraft = backendSystemSelect.value;
+    backendModuleIdDraft = '';
+    backendActionIdDraft = '';
+    backendManualIdDraft = '';
+    backendManuals = [];
+    backendSettingsDirty = true;
+    renderBackendSyncSection();
+  });
+
+  backendModuleSelect.addEventListener('change', () => {
+    backendModuleIdDraft = backendModuleSelect.value;
+    backendActionIdDraft = '';
+    backendManualIdDraft = '';
+    backendManuals = [];
+    backendSettingsDirty = true;
+    renderBackendSyncSection();
+  });
+
+  backendActionSelect.addEventListener('change', () => {
+    backendActionIdDraft = backendActionSelect.value;
+    backendManualIdDraft = '';
+    backendSettingsDirty = true;
+    void runPanelAction(loadManualsForSelectedAction);
+  });
+
+  backendManualSelect.addEventListener('change', () => {
+    backendManualIdDraft = backendManualSelect.value;
+    backendSettingsDirty = true;
+    renderBackendSyncSection();
+  });
+
+  newSystemNameInput.addEventListener('input', () => {
+    newSystemNameDraft = newSystemNameInput.value;
+    renderBackendSyncSection();
+  });
+
+  newWorkspaceNameInput.addEventListener('input', () => {
+    newWorkspaceNameDraft = newWorkspaceNameInput.value;
+    renderBackendSyncSection();
+  });
+
+  newModuleNameInput.addEventListener('input', () => {
+    newModuleNameDraft = newModuleNameInput.value;
+    renderBackendSyncSection();
+  });
+
+  newActionNameInput.addEventListener('input', () => {
+    newActionNameDraft = newActionNameInput.value;
+    renderBackendSyncSection();
+  });
+
+  collaboratorUsernameInput.addEventListener('input', () => {
+    collaboratorUsernameDraft = collaboratorUsernameInput.value;
+    renderBackendSyncSection();
+  });
+
+  collaboratorRoleSelect.addEventListener('change', () => {
+    collaboratorRoleDraft = parseWorkspaceMemberRole(collaboratorRoleSelect.value);
+    renderBackendSyncSection();
+  });
+
   contextModeButton.addEventListener('click', () => {
     previewMode = 'context';
     render();
@@ -210,6 +391,50 @@ async function initializeSidePanel(): Promise<void> {
     void runPanelAction(handleSaveManualMetadata);
   });
 
+  saveBackendSettingsButton.addEventListener('click', () => {
+    void runPanelAction(handleSaveBackendSettings);
+  });
+
+  backendLoginButton.addEventListener('click', () => {
+    void runPanelAction(handleBackendLogin);
+  });
+
+  backendRegisterButton.addEventListener('click', () => {
+    void runPanelAction(handleBackendRegister);
+  });
+
+  validateBackendButton.addEventListener('click', () => {
+    void runPanelAction(handleValidateBackendConnection);
+  });
+
+  createRemoteManualButton.addEventListener('click', () => {
+    void runPanelAction(handleCreateRemoteManual);
+  });
+
+  loadRemoteManualButton.addEventListener('click', () => {
+    void runPanelAction(handleLoadRemoteManual);
+  });
+
+  createSystemButton.addEventListener('click', () => {
+    void runPanelAction(handleCreateRemoteSystem);
+  });
+
+  createWorkspaceButton.addEventListener('click', () => {
+    void runPanelAction(handleCreateRemoteWorkspace);
+  });
+
+  createModuleButton.addEventListener('click', () => {
+    void runPanelAction(handleCreateRemoteModule);
+  });
+
+  createActionButton.addEventListener('click', () => {
+    void runPanelAction(handleCreateRemoteAction);
+  });
+
+  addCollaboratorButton.addEventListener('click', () => {
+    void runPanelAction(handleAddWorkspaceCollaborator);
+  });
+
   openManualViewButton.addEventListener('click', () => {
     void runPanelAction(async () => {
       await openManualPage(false);
@@ -256,7 +481,11 @@ async function initializeSidePanel(): Promise<void> {
     const watchedSessionChange =
       areaName === 'session' && Object.prototype.hasOwnProperty.call(changes, PANEL_STATE_STORAGE_KEY);
     const watchedLocalChange =
-      areaName === 'local' && Object.prototype.hasOwnProperty.call(changes, MANUAL_DRAFT_STORAGE_KEY);
+      areaName === 'local' &&
+      (
+        Object.prototype.hasOwnProperty.call(changes, MANUAL_DRAFT_STORAGE_KEY) ||
+        Object.prototype.hasOwnProperty.call(changes, BACKEND_SYNC_SETTINGS_STORAGE_KEY)
+      );
 
     if (!watchedSessionChange && !watchedLocalChange) {
       return;
@@ -269,13 +498,15 @@ async function initializeSidePanel(): Promise<void> {
 }
 
 async function refreshState(): Promise<void> {
-  const [panelState, manualDraft] = await Promise.all([
+  const [panelState, manualDraft, backendSettings] = await Promise.all([
     loadPanelState(),
     loadManualDraft(),
+    loadBackendSyncSettings(),
   ]);
 
   currentState = panelState;
   currentDraft = manualDraft;
+  currentBackendSettings = backendSettings;
 
   if (
     selectedCaptureId === null ||
@@ -293,7 +524,31 @@ async function refreshState(): Promise<void> {
 
   syncStepFormState(getSelectedStep());
   syncManualMetaFormState();
+  syncBackendSettingsFormState();
   render();
+}
+
+async function tryLoadInitialBackendCatalog(): Promise<void> {
+  if (
+    !currentBackendSettings.enabled ||
+    currentBackendSettings.apiBaseUrl.trim().length === 0 ||
+    currentBackendSettings.authToken === null ||
+    currentBackendSettings.workspaceId.trim().length === 0
+  ) {
+    return;
+  }
+
+  try {
+    await loadBackendWorkspaces(currentBackendSettings.apiBaseUrl, currentBackendSettings.authToken);
+    await loadBackendCatalog(
+      currentBackendSettings.apiBaseUrl,
+      currentBackendSettings.authToken,
+      currentBackendSettings.workspaceId,
+    );
+    render();
+  } catch {
+    return;
+  }
 }
 
 function render(): void {
@@ -303,6 +558,7 @@ function render(): void {
   renderStatusBadge();
   renderSummary();
   renderCaptureMode();
+  renderBackendSyncSection();
   renderPendingSection();
   renderErrorSection();
   renderCapturePreview(selectedCapture);
@@ -359,6 +615,155 @@ function renderCaptureMode(): void {
   toggleCaptureModeButton.disabled = panelBusy;
 }
 
+function renderBackendSyncSection(): void {
+  backendSyncEnabledInput.checked = backendSyncEnabledDraft;
+  backendApiUrlInput.value = backendApiBaseUrlDraft;
+  backendUsernameInput.value = backendUsernameDraft;
+  backendPasswordInput.value = backendPasswordDraft;
+  backendStartedByInput.value = backendStartedByDraft;
+  newWorkspaceNameInput.value = newWorkspaceNameDraft;
+  newSystemNameInput.value = newSystemNameDraft;
+  newModuleNameInput.value = newModuleNameDraft;
+  newActionNameInput.value = newActionNameDraft;
+  collaboratorUsernameInput.value = collaboratorUsernameDraft;
+  collaboratorRoleSelect.value = collaboratorRoleDraft;
+  renderCatalogSelectors();
+  backendSyncStatusText.textContent = buildBackendSyncStatusText();
+
+  const hasApiUrlDraft = backendApiBaseUrlDraft.trim().length > 0;
+  const isAuthenticated = backendAuthTokenDraft !== null && backendAuthTokenDraft.trim().length > 0;
+  const hasWorkspaceDraft = backendWorkspaceIdDraft.trim().length > 0;
+  const hasConnectionDraft =
+    hasApiUrlDraft &&
+    isAuthenticated &&
+    hasWorkspaceDraft &&
+    backendStartedByDraft.trim().length > 0 &&
+    backendActionIdDraft.trim().length > 0;
+  const canCreateRemoteManual = hasConnectionDraft && getEffectiveManualTitle().length > 0;
+  const canLoadRemoteManual = hasConnectionDraft && backendManualIdDraft.trim().length > 0;
+  const canLogin = hasApiUrlDraft && backendUsernameDraft.trim().length >= 2 && backendPasswordDraft.length >= 6;
+
+  backendLoginButton.disabled = panelBusy || !canLogin;
+  backendRegisterButton.disabled = panelBusy || !canLogin;
+  saveBackendSettingsButton.disabled = panelBusy || !backendSettingsDirty;
+  validateBackendButton.disabled = panelBusy || !hasApiUrlDraft || !isAuthenticated || !hasWorkspaceDraft;
+  createRemoteManualButton.disabled = panelBusy || !canCreateRemoteManual;
+  loadRemoteManualButton.disabled = panelBusy || !canLoadRemoteManual;
+  createWorkspaceButton.disabled =
+    panelBusy ||
+    !hasApiUrlDraft ||
+    !isAuthenticated ||
+    newWorkspaceNameDraft.trim().length < 2;
+  createSystemButton.disabled =
+    panelBusy ||
+    !hasApiUrlDraft ||
+    !isAuthenticated ||
+    !hasWorkspaceDraft ||
+    newSystemNameDraft.trim().length < 2;
+  createModuleButton.disabled =
+    panelBusy ||
+    !hasApiUrlDraft ||
+    !isAuthenticated ||
+    backendSystemIdDraft.trim().length === 0 ||
+    newModuleNameDraft.trim().length < 2;
+  createActionButton.disabled =
+    panelBusy ||
+    !hasApiUrlDraft ||
+    !isAuthenticated ||
+    backendModuleIdDraft.trim().length === 0 ||
+    newActionNameDraft.trim().length < 2;
+  addCollaboratorButton.disabled =
+    panelBusy ||
+    !hasApiUrlDraft ||
+    !isAuthenticated ||
+    !hasWorkspaceDraft ||
+    collaboratorUsernameDraft.trim().length < 2;
+}
+
+function renderCatalogSelectors(): void {
+  const systems = backendCatalog?.systems ?? [];
+  const selectedSystem = getSelectedRemoteSystem();
+  const modules = selectedSystem?.systemModules ?? [];
+  const selectedModule = getSelectedRemoteModule();
+  const actions = selectedModule?.actions ?? [];
+
+  renderSelectOptions(
+    backendWorkspaceSelect,
+    backendWorkspaces,
+    backendWorkspaceIdDraft,
+    backendAuthTokenDraft === null ? 'Inicia sesion' : 'Selecciona un workspace',
+    (workspace) => workspace.id,
+    (workspace) => workspace.name,
+  );
+
+  renderSelectOptions(
+    backendSystemSelect,
+    systems,
+    backendSystemIdDraft,
+    backendWorkspaceIdDraft.length === 0 ? 'Selecciona un workspace' : 'Selecciona un sistema',
+    (system) => system.id,
+    (system) => system.name,
+  );
+
+  renderSelectOptions(
+    backendModuleSelect,
+    modules,
+    backendModuleIdDraft,
+    backendSystemIdDraft.length === 0 ? 'Selecciona un sistema' : 'Selecciona un modulo',
+    (systemModule) => systemModule.id,
+    (systemModule) => systemModule.name,
+  );
+
+  renderSelectOptions(
+    backendActionSelect,
+    actions,
+    backendActionIdDraft,
+    backendModuleIdDraft.length === 0 ? 'Selecciona un modulo' : 'Selecciona una accion',
+    (action) => action.id,
+    (action) => action.name,
+  );
+
+  renderSelectOptions(
+    backendManualSelect,
+    backendManuals,
+    backendManualIdDraft,
+    backendActionIdDraft.length === 0 ? 'Selecciona una accion' : 'Selecciona o crea un manual',
+    (manual) => manual.id,
+    (manual) => `${manual.title} (${manual.stepCount} paso${manual.stepCount === 1 ? '' : 's'})`,
+  );
+
+  backendWorkspaceSelect.disabled = backendAuthTokenDraft === null || backendWorkspaces.length === 0;
+  backendSystemSelect.disabled = backendWorkspaceIdDraft.length === 0 || systems.length === 0;
+  backendModuleSelect.disabled = backendSystemIdDraft.length === 0 || modules.length === 0;
+  backendActionSelect.disabled = backendModuleIdDraft.length === 0 || actions.length === 0;
+  backendManualSelect.disabled = backendActionIdDraft.length === 0 || backendManuals.length === 0;
+}
+
+function renderSelectOptions<TItem>(
+  select: HTMLSelectElement,
+  items: TItem[],
+  selectedValue: string,
+  placeholder: string,
+  getValue: (item: TItem) => string,
+  getLabel: (item: TItem) => string,
+): void {
+  select.replaceChildren();
+
+  const placeholderOption = document.createElement('option');
+  placeholderOption.value = '';
+  placeholderOption.textContent = placeholder;
+  select.appendChild(placeholderOption);
+
+  for (const item of items) {
+    const option = document.createElement('option');
+    option.value = getValue(item);
+    option.textContent = getLabel(item);
+    select.appendChild(option);
+  }
+
+  select.value = items.some((item) => getValue(item) === selectedValue) ? selectedValue : '';
+}
+
 function renderPendingSection(): void {
   if (currentState.status === 'capturing' && currentState.pendingSelection !== null) {
     pendingSection.hidden = false;
@@ -400,7 +805,7 @@ function renderCapturePreview(selectedCapture: CapturedSelectionRecord | null): 
   detailRect.textContent = formatRect(selectedCapture.selectedElement.rect);
   detailContext.textContent = formatRect(selectedCapture.contextRegion);
   detailViewport.textContent = formatViewport(selectedCapture);
-  detailSurface.textContent = formatReviewSurface(currentState.reviewSurface);
+  detailSurface.textContent = `${formatReviewSurface(currentState.reviewSurface)} | ${formatRemoteSyncStatus(selectedCapture.remoteSyncStatus)}`;
   confirmCaptureButton.disabled = panelBusy;
   discardCaptureButton.disabled = panelBusy;
 
@@ -444,7 +849,8 @@ function renderCaptureQueue(selectedCapture: CapturedSelectionRecord | null): vo
     title.textContent = capture.selectedElement.selector;
 
     const subtitle = document.createElement('span');
-    subtitle.textContent = `${capture.selectedElement.tagName} | ${formatTimestamp(capture.createdAt)}`;
+    subtitle.textContent =
+      `${capture.selectedElement.tagName} | ${formatTimestamp(capture.createdAt)} | ${formatRemoteSyncStatus(capture.remoteSyncStatus)}`;
 
     const text = document.createElement('span');
     text.textContent = capture.selectedElement.text ?? capture.selectedElement.pageTitle;
@@ -478,7 +884,8 @@ function renderStepEditor(selectedStep: ManualStep | null): void {
   stepPreviewImage.src = selectedStep.imageContextDataUrl;
   stepPreviewImage.alt = `Vista del ${selectedStep.title}`;
   stepHeading.textContent = selectedStep.title;
-  stepMeta.textContent = `Paso ${selectedStep.order} | ${selectedStep.pageTitle || 'Pagina sin titulo'}`;
+  stepMeta.textContent =
+    `Paso ${selectedStep.order} | ${selectedStep.pageTitle || 'Pagina sin titulo'} | ${formatRemoteSyncStatus(selectedStep.remoteSyncStatus)}${selectedStep.remoteSyncError ? ` | ${selectedStep.remoteSyncError}` : ''}`;
   stepTitleInput.value = stepFormTitle;
   stepDescriptionInput.value = stepFormDescription;
   stepDetailSelector.textContent = selectedStep.selector;
@@ -587,7 +994,8 @@ function renderStepsList(selectedStep: ManualStep | null): void {
     title.textContent = step.title;
 
     const subtitle = document.createElement('span');
-    subtitle.textContent = `${step.selector} | ${formatTimestamp(step.createdAt)}`;
+    subtitle.textContent =
+      `${step.selector} | ${formatTimestamp(step.createdAt)} | ${formatRemoteSyncStatus(step.remoteSyncStatus)}`;
 
     const description = document.createElement('span');
     description.textContent = step.description || step.pageTitle;
@@ -619,6 +1027,7 @@ function renderExportState(): void {
   openManualViewButton.disabled = !hasSteps || panelBusy;
   openPrintViewButton.disabled = !hasSteps || panelBusy;
   saveManualMetaButton.disabled = panelBusy || !manualMetaDirty;
+  saveBackendSettingsButton.disabled = panelBusy || !backendSettingsDirty;
   toggleCaptureModeButton.disabled = panelBusy;
   clearCapturesButton.disabled =
     (currentState.captures.length === 0 && currentState.pendingSelection === null) || panelBusy;
@@ -670,7 +1079,7 @@ async function handleConfirmSelectedCapture(): Promise<void> {
 
   const contextAsset = await createContextImageAsset(capture);
   const nextOrder = manualDraft.steps.length + 1;
-  const nextStep = createManualStep({
+  const localStep = createManualStep({
     capture,
     order: nextOrder,
     title: buildStepTitleSuggestion(capture),
@@ -678,6 +1087,7 @@ async function handleConfirmSelectedCapture(): Promise<void> {
     imageContextDataUrl: contextAsset.dataUrl,
     imageContextFormat: contextAsset.format,
   });
+  const nextStep = await syncConfirmedStepToBackend(capture, localStep, contextAsset);
 
   selectedStepId = nextStep.id;
   selectedCaptureId = getNextCaptureId(panelState.captures, capture.id);
@@ -701,9 +1111,11 @@ async function handleDiscardSelectedCapture(): Promise<void> {
     return;
   }
 
+  await trySyncDiscardedCaptureToBackend(capture);
   selectedCaptureId = getNextCaptureId(panelState.captures, capture.id);
   await savePanelState(removeCaptureFromState(panelState, capture.id));
   await refreshState();
+  await tryLoadInitialBackendCatalog();
 }
 
 async function handleSaveSelectedStep(): Promise<void> {
@@ -718,21 +1130,8 @@ async function handleSaveSelectedStep(): Promise<void> {
   const title = sanitizeStepTitle(stepFormTitle) || 'Elemento seleccionado';
   const description = sanitizeStepDescription(stepFormDescription);
 
-  const nextSteps = manualDraft.steps.map((step) => (
-    step.id === selectedStep.id
-      ? {
-          ...step,
-          title,
-          description,
-        }
-      : step
-  ));
-
   stepFormDirty = false;
-  await saveManualDraft({
-    ...manualDraft,
-    steps: nextSteps,
-  });
+  await persistStepEdits(manualDraft, selectedStep.id, title, description);
   await refreshState();
 }
 
@@ -976,9 +1375,930 @@ async function handleSaveManualMetadata(): Promise<void> {
   await refreshState();
 }
 
+async function handleSaveBackendSettings(): Promise<void> {
+  await persistBackendSettingsDraft();
+  await refreshState();
+}
+
+async function handleBackendLogin(): Promise<void> {
+  await authenticateBackend('login');
+}
+
+async function handleBackendRegister(): Promise<void> {
+  await authenticateBackend('register');
+}
+
+async function authenticateBackend(mode: 'login' | 'register'): Promise<void> {
+  const settings = await persistBackendSettingsDraft();
+
+  try {
+    if (settings.apiBaseUrl.trim().length === 0) {
+      throw new Error('Configura la URL base del backend.');
+    }
+
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    const authResponse = mode === 'login'
+      ? await client.login({
+          username: backendUsernameDraft,
+          password: backendPasswordDraft,
+        })
+      : await client.register({
+          username: backendUsernameDraft,
+          password: backendPasswordDraft,
+          displayName: backendStartedByDraft.trim().length > 0 ? backendStartedByDraft : backendUsernameDraft,
+        });
+
+    await applyBackendAuthResponse(settings, authResponse, client.baseUrl);
+  } catch (error) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: getErrorMessage(error),
+    });
+  }
+
+  backendSettingsDirty = false;
+  await refreshState();
+}
+
+async function applyBackendAuthResponse(
+  previousSettings: BackendSyncSettings,
+  authResponse: RemoteAuthResponse,
+  apiBaseUrl: string,
+): Promise<void> {
+  backendAuthTokenDraft = authResponse.accessToken;
+  backendUserIdDraft = authResponse.user.id;
+  backendUsernameDraft = authResponse.user.username;
+  backendDisplayNameDraft = authResponse.user.displayName;
+  backendStartedByDraft = authResponse.user.displayName || authResponse.user.username;
+  backendPasswordDraft = '';
+
+  backendWorkspaces = await loadBackendWorkspaces(apiBaseUrl, authResponse.accessToken);
+  if (!backendWorkspaces.some((workspace) => workspace.id === backendWorkspaceIdDraft)) {
+    backendWorkspaceIdDraft = backendWorkspaces[0]?.id ?? '';
+  }
+
+  if (backendWorkspaceIdDraft.length > 0) {
+    await loadBackendCatalog(apiBaseUrl, authResponse.accessToken, backendWorkspaceIdDraft);
+  }
+
+  await saveBackendSyncSettings({
+    ...previousSettings,
+    apiBaseUrl,
+    authToken: authResponse.accessToken,
+    userId: authResponse.user.id,
+    username: authResponse.user.username,
+    displayName: authResponse.user.displayName,
+    startedBy: backendStartedByDraft,
+    workspaceId: backendWorkspaceIdDraft,
+    systemId: backendSystemIdDraft,
+    moduleId: backendModuleIdDraft,
+    actionId: backendActionIdDraft,
+    manualId: backendManualIdDraft,
+    sessionId: null,
+    sessionActionId: null,
+    workspaceName: backendWorkspaces.find((workspace) => workspace.id === backendWorkspaceIdDraft)?.name ?? null,
+    lastValidatedAt: new Date().toISOString(),
+    lastError: null,
+  });
+}
+
+async function handleValidateBackendConnection(): Promise<void> {
+  const settings = await persistBackendSettingsDraft();
+
+  try {
+    if (settings.apiBaseUrl.trim().length === 0) {
+      throw new Error('Configura la URL base del backend.');
+    }
+
+    if (settings.authToken === null) {
+      throw new Error('Inicia sesion antes de cargar el catalogo.');
+    }
+
+    if (settings.workspaceId.trim().length === 0) {
+      throw new Error('Selecciona o crea un workspace antes de cargar el catalogo.');
+    }
+
+    await loadBackendWorkspaces(settings.apiBaseUrl, settings.authToken);
+    const workspaceOverview = await loadBackendCatalog(settings.apiBaseUrl, settings.authToken, settings.workspaceId);
+
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken).baseUrl,
+      workspaceId: backendWorkspaceIdDraft,
+      systemId: backendSystemIdDraft,
+      moduleId: backendModuleIdDraft,
+      actionId: backendActionIdDraft,
+      manualId: backendManualIdDraft,
+      workspaceName: workspaceOverview.workspace.name,
+      lastValidatedAt: new Date().toISOString(),
+      lastError: null,
+    });
+  } catch (error) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: getErrorMessage(error),
+    });
+  }
+
+  await refreshState();
+  await tryLoadInitialBackendCatalog();
+}
+
+async function handleCreateRemoteWorkspace(): Promise<void> {
+  const settings = await persistBackendSettingsDraft();
+
+  try {
+    if (settings.authToken === null) {
+      throw new Error('Inicia sesion antes de crear un workspace.');
+    }
+
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    const workspace = await client.createWorkspace({
+      name: newWorkspaceNameDraft,
+    });
+
+    newWorkspaceNameDraft = '';
+    backendWorkspaceIdDraft = workspace.id;
+    backendSystemIdDraft = '';
+    backendModuleIdDraft = '';
+    backendActionIdDraft = '';
+    backendManualIdDraft = '';
+    backendCatalog = null;
+    backendManuals = [];
+    await loadBackendWorkspaces(client.baseUrl, settings.authToken);
+    await loadBackendCatalog(client.baseUrl, settings.authToken, workspace.id);
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      workspaceId: workspace.id,
+      systemId: '',
+      moduleId: '',
+      actionId: '',
+      manualId: '',
+      sessionId: null,
+      sessionActionId: null,
+      workspaceName: workspace.name,
+      lastValidatedAt: new Date().toISOString(),
+      lastError: null,
+    });
+  } catch (error) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: getErrorMessage(error),
+    });
+  }
+
+  backendSettingsDirty = false;
+  await refreshState();
+}
+
+async function handleCreateRemoteSystem(): Promise<void> {
+  const settings = await persistBackendSettingsDraft();
+
+  try {
+    if (settings.authToken === null) {
+      throw new Error('Inicia sesion antes de crear un sistema.');
+    }
+
+    if (settings.workspaceId.trim().length === 0) {
+      throw new Error('Selecciona un workspace antes de crear un sistema.');
+    }
+
+    const workspaceOverview = backendCatalog ?? await loadBackendCatalog(settings.apiBaseUrl, settings.authToken, settings.workspaceId);
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    const system = await client.createSystem({
+      workspaceId: workspaceOverview.workspace.id,
+      name: newSystemNameDraft,
+    });
+
+    backendSystemIdDraft = system.id;
+    backendModuleIdDraft = '';
+    backendActionIdDraft = '';
+    backendManualIdDraft = '';
+    backendManuals = [];
+    newSystemNameDraft = '';
+
+    await loadBackendCatalog(client.baseUrl, settings.authToken, workspaceOverview.workspace.id);
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      workspaceId: workspaceOverview.workspace.id,
+      systemId: backendSystemIdDraft,
+      moduleId: '',
+      actionId: '',
+      manualId: '',
+      sessionId: null,
+      sessionActionId: null,
+      lastError: null,
+    });
+  } catch (error) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: getErrorMessage(error),
+    });
+  }
+
+  backendSettingsDirty = false;
+  await refreshState();
+}
+
+async function handleCreateRemoteModule(): Promise<void> {
+  const settings = await persistBackendSettingsDraft();
+
+  try {
+    if (settings.authToken === null) {
+      throw new Error('Inicia sesion antes de crear un modulo.');
+    }
+
+    if (backendSystemIdDraft.length === 0) {
+      throw new Error('Selecciona un sistema antes de crear el modulo.');
+    }
+
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    const systemModule = await client.createSystemModule({
+      systemId: backendSystemIdDraft,
+      name: newModuleNameDraft,
+    });
+
+    backendModuleIdDraft = systemModule.id;
+    backendActionIdDraft = '';
+    backendManualIdDraft = '';
+    backendManuals = [];
+    newModuleNameDraft = '';
+
+    await loadBackendCatalog(client.baseUrl, settings.authToken, settings.workspaceId);
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      systemId: backendSystemIdDraft,
+      moduleId: backendModuleIdDraft,
+      actionId: '',
+      manualId: '',
+      sessionId: null,
+      sessionActionId: null,
+      lastError: null,
+    });
+  } catch (error) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: getErrorMessage(error),
+    });
+  }
+
+  backendSettingsDirty = false;
+  await refreshState();
+}
+
+async function handleCreateRemoteAction(): Promise<void> {
+  const settings = await persistBackendSettingsDraft();
+
+  try {
+    if (settings.authToken === null) {
+      throw new Error('Inicia sesion antes de crear una accion.');
+    }
+
+    if (backendModuleIdDraft.length === 0) {
+      throw new Error('Selecciona un modulo antes de crear la accion.');
+    }
+
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    const action = await client.createAction({
+      moduleId: backendModuleIdDraft,
+      name: newActionNameDraft,
+    });
+
+    backendActionIdDraft = action.id;
+    backendManualIdDraft = '';
+    backendManuals = [];
+    newActionNameDraft = '';
+
+    await loadBackendCatalog(client.baseUrl, settings.authToken, settings.workspaceId);
+    await loadManualsForSelectedAction();
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      systemId: backendSystemIdDraft,
+      moduleId: backendModuleIdDraft,
+      actionId: backendActionIdDraft,
+      manualId: '',
+      sessionId: null,
+      sessionActionId: null,
+      lastError: null,
+    });
+  } catch (error) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: getErrorMessage(error),
+    });
+  }
+
+  backendSettingsDirty = false;
+  await refreshState();
+}
+
+async function handleCreateRemoteManual(): Promise<void> {
+  await persistPendingEditsIfNeeded();
+
+  const settings = await persistBackendSettingsDraft();
+
+  try {
+    const configurationError = getBackendSettingsConfigurationError(settings, false);
+    if (configurationError !== null) {
+      throw new Error(configurationError);
+    }
+
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    const manual = await client.createManual({
+      actionId: settings.actionId,
+      title: getEffectiveManualTitle(),
+      description: sanitizeManualDescription(manualDescriptionDraft),
+      createdBy: settings.startedBy,
+    });
+
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      workspaceId: backendWorkspaceIdDraft,
+      systemId: backendSystemIdDraft,
+      moduleId: backendModuleIdDraft,
+      actionId: settings.actionId,
+      manualId: manual.id,
+      lastError: null,
+    });
+
+    backendManualIdDraft = manual.id;
+    await loadManualsForSelectedAction();
+  } catch (error) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: getErrorMessage(error),
+    });
+  }
+
+  await refreshState();
+}
+
+async function handleLoadRemoteManual(): Promise<void> {
+  await persistPendingEditsIfNeeded();
+
+  const settings = await persistBackendSettingsDraft();
+
+  try {
+    const configurationError = getBackendSettingsConfigurationError(settings, true);
+    if (configurationError !== null) {
+      throw new Error(configurationError);
+    }
+
+    if (
+      currentDraft.steps.length > 0 &&
+      !window.confirm('Cargar el manual remoto reemplazara el borrador local actual. Continuar?')
+    ) {
+      return;
+    }
+
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    const remoteManual = await client.getManual(settings.manualId);
+    const loadedDraft = await buildManualDraftFromRemoteManual(remoteManual, client.baseUrl);
+    const firstStep = loadedDraft.steps[0] ?? null;
+
+    selectedStepId = firstStep?.id ?? null;
+    selectedCaptureId = null;
+    stepFormDirty = false;
+    manualMetaDirty = false;
+    backendWorkspaceIdDraft = remoteManual.system.workspaceId;
+    backendSystemIdDraft = remoteManual.system.id;
+    backendModuleIdDraft = remoteManual.systemModule.id;
+    backendActionIdDraft = remoteManual.action.id;
+    backendManualIdDraft = remoteManual.manual.id;
+
+    await saveManualDraft(loadedDraft);
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      workspaceId: remoteManual.system.workspaceId,
+      systemId: remoteManual.system.id,
+      moduleId: remoteManual.systemModule.id,
+      actionId: remoteManual.action.id,
+      manualId: remoteManual.manual.id,
+      sessionId: null,
+      sessionActionId: null,
+      workspaceName: backendCatalog?.workspace.name ?? settings.workspaceName,
+      lastValidatedAt: new Date().toISOString(),
+      lastError: null,
+    });
+
+    if (settings.authToken !== null) {
+      await loadBackendCatalog(client.baseUrl, settings.authToken, remoteManual.system.workspaceId);
+      await loadManualsForSelectedAction();
+    }
+  } catch (error) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: getErrorMessage(error),
+    });
+  }
+
+  await refreshState();
+}
+
+async function handleAddWorkspaceCollaborator(): Promise<void> {
+  const settings = await persistBackendSettingsDraft();
+
+  try {
+    if (settings.authToken === null) {
+      throw new Error('Inicia sesion antes de agregar colaboradores.');
+    }
+
+    if (settings.workspaceId.trim().length === 0) {
+      throw new Error('Selecciona un workspace antes de agregar colaboradores.');
+    }
+
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    await client.addWorkspaceMember(settings.workspaceId, {
+      username: collaboratorUsernameDraft,
+      role: collaboratorRoleDraft,
+    });
+
+    collaboratorUsernameDraft = '';
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      lastValidatedAt: new Date().toISOString(),
+      lastError: null,
+    });
+  } catch (error) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: getErrorMessage(error),
+    });
+  }
+
+  backendSettingsDirty = false;
+  await refreshState();
+}
+
+async function loadBackendWorkspaces(
+  apiBaseUrl: string,
+  authToken: string,
+): Promise<RemoteWorkspaceRecord[]> {
+  const client = createManualBuilderApiClient(apiBaseUrl, authToken);
+  backendWorkspaces = await client.listWorkspaces();
+  return backendWorkspaces;
+}
+
+async function loadBackendCatalogForDraft(): Promise<void> {
+  if (backendAuthTokenDraft === null || backendWorkspaceIdDraft.trim().length === 0) {
+    return;
+  }
+
+  await loadBackendCatalog(backendApiBaseUrlDraft, backendAuthTokenDraft, backendWorkspaceIdDraft);
+}
+
+async function loadBackendCatalog(
+  apiBaseUrl: string,
+  authToken: string,
+  workspaceId: string,
+): Promise<WorkspaceOverview> {
+  const client = createManualBuilderApiClient(apiBaseUrl, authToken);
+  const workspaceOverview = await client.getWorkspaceOverview(workspaceId);
+  backendCatalog = workspaceOverview;
+  backendWorkspaceIdDraft = workspaceOverview.workspace.id;
+  synchronizeCatalogSelection();
+
+  if (backendActionIdDraft.length > 0) {
+    await loadManualsForSelectedAction();
+  } else {
+    backendManuals = [];
+    backendManualIdDraft = '';
+  }
+
+  return workspaceOverview;
+}
+
+async function loadManualsForSelectedAction(): Promise<void> {
+  if (backendActionIdDraft.trim().length === 0) {
+    backendManuals = [];
+    backendManualIdDraft = '';
+    renderBackendSyncSection();
+    return;
+  }
+
+  const client = createManualBuilderApiClient(backendApiBaseUrlDraft, backendAuthTokenDraft);
+  backendManuals = await client.listManualsByAction(backendActionIdDraft);
+
+  if (!backendManuals.some((manual) => manual.id === backendManualIdDraft)) {
+    backendManualIdDraft = '';
+  }
+
+  renderBackendSyncSection();
+}
+
+async function buildManualDraftFromRemoteManual(
+  remoteManual: RemoteManualDetail,
+  apiBaseUrl: string,
+): Promise<ManualDraft> {
+  const remoteSteps = [...remoteManual.steps].sort((left, right) => left.order - right.order);
+  const steps: ManualStep[] = [];
+
+  for (const [index, remoteStep] of remoteSteps.entries()) {
+    steps.push(await buildManualStepFromRemoteStep(
+      remoteStep,
+      index + 1,
+      remoteManual.manual.id,
+      apiBaseUrl,
+    ));
+  }
+
+  return {
+    title: sanitizeManualTitle(remoteManual.manual.title) || 'Manual de usuario',
+    author: sanitizeManualAuthor(remoteManual.manual.createdBy),
+    description: sanitizeManualDescription(remoteManual.manual.description),
+    createdAt: remoteManual.manual.createdAt,
+    steps,
+    lastUpdatedAt: remoteManual.manual.updatedAt,
+  };
+}
+
+async function buildManualStepFromRemoteStep(
+  remoteStep: RemoteManualStepWithAsset,
+  order: number,
+  manualId: string,
+  apiBaseUrl: string,
+): Promise<ManualStep> {
+  const imageAsset = await fetchRemoteAssetAsImageAsset(remoteStep.asset, apiBaseUrl);
+  const selectedElement = buildSelectedElementFromRemoteStep(remoteStep);
+
+  return {
+    id: crypto.randomUUID(),
+    order,
+    title: sanitizeStepTitle(remoteStep.title) || `Paso ${order}`,
+    description: sanitizeStepDescription(remoteStep.description),
+    selector: remoteStep.selector,
+    url: remoteStep.pageUrl,
+    pageTitle: remoteStep.pageTitle,
+    imageOriginalDataUrl: imageAsset.dataUrl,
+    imageOriginalFormat: imageAsset.format,
+    imageContextDataUrl: imageAsset.dataUrl,
+    imageContextFormat: imageAsset.format,
+    selectedElement,
+    contextRegion: selectedElement.rect,
+    createdAt: remoteStep.createdAt,
+    annotationBaked: true,
+    remoteManualId: manualId,
+    remoteCaptureId: remoteStep.sourceCaptureId,
+    remoteStepId: remoteStep.id,
+    remoteSyncStatus: 'synced',
+    remoteSyncError: null,
+  };
+}
+
+function buildSelectedElementFromRemoteStep(remoteStep: RemoteManualStepWithAsset): SelectedElementData {
+  return {
+    tagName: remoteStep.selectedElementTag,
+    id: null,
+    text: remoteStep.textSnippet,
+    selector: remoteStep.selector,
+    url: remoteStep.pageUrl,
+    pageTitle: remoteStep.pageTitle,
+    rect: {
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+    },
+    viewport: {
+      width: 1,
+      height: 1,
+      devicePixelRatio: 1,
+    },
+  };
+}
+
+async function fetchRemoteAssetAsImageAsset(
+  asset: RemoteAssetRecord,
+  apiBaseUrl: string,
+): Promise<GeneratedImageAsset> {
+  const response = await fetch(resolveRemoteAssetUrl(asset.publicUrl, apiBaseUrl));
+  if (!response.ok) {
+    throw new Error(`No se pudo descargar la imagen remota ${asset.fileName}.`);
+  }
+
+  const blob = await response.blob();
+  const detectedFormat = getSupportedImageAssetFormat(blob.type || asset.mimeType);
+  if (detectedFormat !== null) {
+    return {
+      dataUrl: await blobToDataUrl(blob),
+      format: detectedFormat,
+    };
+  }
+
+  return {
+    dataUrl: await convertImageBlobToPngDataUrl(blob),
+    format: 'png',
+  };
+}
+
+function resolveRemoteAssetUrl(publicUrl: string, apiBaseUrl: string): string {
+  try {
+    return new URL(publicUrl).toString();
+  } catch {
+    return new URL(publicUrl, new URL(apiBaseUrl).origin).toString();
+  }
+}
+
+function getSupportedImageAssetFormat(mimeType: string): ImageAssetFormat | null {
+  switch (mimeType.toLowerCase()) {
+    case 'image/jpeg':
+    case 'image/jpg':
+      return 'jpeg';
+    case 'image/png':
+      return 'png';
+    case 'image/webp':
+      return 'webp';
+    default:
+      return null;
+  }
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error('No se pudo convertir la imagen remota a Data URL.'));
+    };
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen remota.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function convertImageBlobToPngDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(blob);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, image.naturalWidth);
+      canvas.height = Math.max(1, image.naturalHeight);
+
+      const context = canvas.getContext('2d');
+      if (context === null) {
+        reject(new Error('No se pudo preparar la imagen remota para edicion local.'));
+        return;
+      }
+
+      context.drawImage(image, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('El formato de imagen remota no se puede cargar en este navegador.'));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+function synchronizeCatalogSelection(): void {
+  if (backendCatalog === null) {
+    return;
+  }
+
+  if (backendActionIdDraft.length > 0) {
+    const actionPath = findActionPath(backendActionIdDraft);
+    if (actionPath !== null) {
+      backendSystemIdDraft = actionPath.system.id;
+      backendModuleIdDraft = actionPath.systemModule.id;
+      return;
+    }
+  }
+
+  const selectedSystem = getSelectedRemoteSystem();
+  if (selectedSystem === null) {
+    backendSystemIdDraft = '';
+    backendModuleIdDraft = '';
+    backendActionIdDraft = '';
+    backendManualIdDraft = '';
+    return;
+  }
+
+  const selectedModule = getSelectedRemoteModule();
+  if (selectedModule === null) {
+    backendModuleIdDraft = '';
+    backendActionIdDraft = '';
+    backendManualIdDraft = '';
+    return;
+  }
+
+  const selectedAction = getSelectedRemoteAction();
+  if (selectedAction === null) {
+    backendActionIdDraft = '';
+    backendManualIdDraft = '';
+  }
+}
+
+function findActionPath(actionId: string): {
+  system: RemoteSystemSummary;
+  systemModule: RemoteSystemModuleSummary;
+  action: RemoteActionSummary;
+} | null {
+  for (const system of backendCatalog?.systems ?? []) {
+    for (const systemModule of system.systemModules) {
+      const action = systemModule.actions.find((candidate) => candidate.id === actionId) ?? null;
+      if (action !== null) {
+        return { system, systemModule, action };
+      }
+    }
+  }
+
+  return null;
+}
+
+function getSelectedRemoteSystem(): RemoteSystemSummary | null {
+  return backendCatalog?.systems.find((system) => system.id === backendSystemIdDraft) ?? null;
+}
+
+function getSelectedRemoteModule(): RemoteSystemModuleSummary | null {
+  return getSelectedRemoteSystem()?.systemModules.find((systemModule) => (
+    systemModule.id === backendModuleIdDraft
+  )) ?? null;
+}
+
+function getSelectedRemoteAction(): RemoteActionSummary | null {
+  return getSelectedRemoteModule()?.actions.find((action) => action.id === backendActionIdDraft) ?? null;
+}
+
+function getSelectedRemoteManual(): RemoteManualSummary | null {
+  return backendManuals.find((manual) => manual.id === backendManualIdDraft) ?? null;
+}
+
+async function syncConfirmedStepToBackend(
+  capture: CapturedSelectionRecord,
+  step: ManualStep,
+  contextAsset: GeneratedImageAsset,
+): Promise<ManualStep> {
+  const settings = await loadBackendSyncSettings();
+  if (!settings.enabled) {
+    return step;
+  }
+
+  const configurationError = getBackendSettingsConfigurationError(settings, true);
+  if (configurationError !== null) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: configurationError,
+    });
+
+    return applyRemoteSyncError(step, settings.manualId, capture.remoteCaptureId, configurationError);
+  }
+
+  try {
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    const sessionId = await ensureRemoteSessionId(client, settings);
+    const canReuseRemoteCapture =
+      capture.remoteCaptureId !== null &&
+      capture.remoteSessionId !== null &&
+      capture.remoteSessionId === sessionId;
+
+    let remoteCaptureId = capture.remoteCaptureId;
+
+    if (!canReuseRemoteCapture) {
+      const createdCapture = await client.createCapture(sessionId, {
+        ...buildRemoteCapturePayload(capture.selectedElement, capture.imageDataUrl, step.title),
+        description: step.description,
+        framing: DEFAULT_REMOTE_FRAMING,
+        contextImageDataUrl: contextAsset.dataUrl,
+      });
+      remoteCaptureId = createdCapture.capture.id;
+    } else if (remoteCaptureId !== null) {
+      await client.reviewCapture(remoteCaptureId, {
+        status: 'pending',
+        title: step.title,
+        description: step.description,
+        framing: DEFAULT_REMOTE_FRAMING,
+        contextImageDataUrl: contextAsset.dataUrl,
+      });
+    }
+
+    if (remoteCaptureId === null) {
+      throw new Error('No se pudo resolver el identificador remoto de la captura.');
+    }
+
+    const response = await client.addStepFromCapture(settings.manualId, {
+      captureId: remoteCaptureId,
+      title: step.title,
+      description: step.description,
+      framing: DEFAULT_REMOTE_FRAMING,
+    });
+
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      sessionId,
+      sessionActionId: settings.actionId,
+      lastError: null,
+    });
+
+    return {
+      ...step,
+      remoteManualId: settings.manualId,
+      remoteCaptureId,
+      remoteStepId: response.step.id,
+      remoteSyncStatus: 'synced',
+      remoteSyncError: null,
+    };
+  } catch (error) {
+    const syncError = getErrorMessage(error);
+
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: syncError,
+    });
+
+    return applyRemoteSyncError(step, settings.manualId, capture.remoteCaptureId, syncError);
+  }
+}
+
+async function trySyncDiscardedCaptureToBackend(capture: CapturedSelectionRecord): Promise<void> {
+  const settings = await loadBackendSyncSettings();
+  if (!settings.enabled || capture.remoteCaptureId === null) {
+    return;
+  }
+
+  try {
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    await client.reviewCapture(capture.remoteCaptureId, {
+      status: 'discarded',
+    });
+
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      lastError: null,
+    });
+  } catch (error) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: getErrorMessage(error),
+    });
+  }
+}
+
+async function syncEditedStepToBackend(step: ManualStep): Promise<ManualStep> {
+  if (step.remoteStepId === null || step.remoteStepId === undefined) {
+    return step;
+  }
+
+  const settings = await loadBackendSyncSettings();
+  if (!settings.enabled) {
+    return step;
+  }
+
+  try {
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    await client.updateManualStep(step.remoteStepId, {
+      title: step.title,
+      description: step.description,
+    });
+
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      lastError: null,
+    });
+
+    return {
+      ...step,
+      remoteSyncStatus: 'synced',
+      remoteSyncError: null,
+    };
+  } catch (error) {
+    const syncError = getErrorMessage(error);
+
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: syncError,
+    });
+
+    return {
+      ...step,
+      remoteSyncStatus: 'error',
+      remoteSyncError: syncError,
+    };
+  }
+}
+
 async function createContextImageAsset(
   capture: CapturedSelectionRecord,
-): Promise<{ dataUrl: string; format: ImageAssetFormat }> {
+): Promise<GeneratedImageAsset> {
   const image = await loadCaptureImage(capture.imageDataUrl);
   const detachedCanvas = document.createElement('canvas');
   drawCapturePreviewToCanvas(detachedCanvas, image, capture, 'context');
@@ -997,28 +2317,181 @@ async function createContextImageAsset(
   };
 }
 
+async function persistBackendSettingsDraft(): Promise<BackendSyncSettings> {
+  const previousSettings = await loadBackendSyncSettings();
+  const apiChanged = previousSettings.apiBaseUrl.trim() !== backendApiBaseUrlDraft.trim();
+  const loginIdentityChanged = previousSettings.username.trim() !== backendUsernameDraft.trim();
+  const shouldResetAuth = apiChanged || loginIdentityChanged;
+  const shouldResetSession =
+    shouldResetAuth ||
+    previousSettings.authToken !== backendAuthTokenDraft ||
+    previousSettings.workspaceId.trim() !== backendWorkspaceIdDraft.trim() ||
+    previousSettings.startedBy.trim() !== backendStartedByDraft.trim() ||
+    previousSettings.actionId.trim() !== backendActionIdDraft.trim();
+
+  const nextSettings: BackendSyncSettings = {
+    ...previousSettings,
+    enabled: backendSyncEnabledDraft,
+    apiBaseUrl: backendApiBaseUrlDraft,
+    authToken: shouldResetAuth ? null : backendAuthTokenDraft,
+    userId: shouldResetAuth ? null : backendUserIdDraft,
+    username: apiChanged ? '' : backendUsernameDraft,
+    displayName: shouldResetAuth ? '' : backendDisplayNameDraft,
+    startedBy: backendStartedByDraft,
+    workspaceId: backendWorkspaceIdDraft,
+    systemId: backendSystemIdDraft,
+    moduleId: backendModuleIdDraft,
+    actionId: backendActionIdDraft,
+    manualId: backendManualIdDraft,
+    sessionId: shouldResetSession ? null : previousSettings.sessionId,
+    sessionActionId: shouldResetSession ? null : previousSettings.sessionActionId,
+    workspaceName: apiChanged
+      ? null
+      : backendWorkspaces.find((workspace) => workspace.id === backendWorkspaceIdDraft)?.name ?? previousSettings.workspaceName,
+    lastValidatedAt: apiChanged ? null : previousSettings.lastValidatedAt,
+    lastError: shouldResetSession ? null : previousSettings.lastError,
+  };
+
+  await saveBackendSyncSettings(nextSettings);
+  backendSettingsDirty = false;
+  return loadBackendSyncSettings();
+}
+
+async function ensureRemoteSessionId(
+  client: ReturnType<typeof createManualBuilderApiClient>,
+  settings: BackendSyncSettings,
+): Promise<string> {
+  if (settings.sessionId !== null && settings.sessionActionId === settings.actionId) {
+    return settings.sessionId;
+  }
+
+  const session = await client.createCaptureSession({
+    actionId: settings.actionId,
+    startedBy: settings.startedBy,
+  });
+
+  return session.id;
+}
+
+function applyRemoteSyncError(
+  step: ManualStep,
+  manualId: string,
+  captureId: string | null,
+  errorMessage: string,
+): ManualStep {
+  return {
+    ...step,
+    remoteManualId: manualId.trim().length > 0 ? manualId : null,
+    remoteCaptureId: captureId,
+    remoteSyncStatus: 'error',
+    remoteSyncError: errorMessage,
+  };
+}
+
+function getBackendSettingsConfigurationError(
+  settings: BackendSyncSettings,
+  requireManualId: boolean,
+): string | null {
+  if (settings.apiBaseUrl.trim().length === 0) {
+    return 'Configura la URL base del backend.';
+  }
+
+  if (settings.authToken === null || settings.authToken.trim().length === 0) {
+    return 'Inicia sesion en el backend.';
+  }
+
+  if (settings.workspaceId.trim().length === 0) {
+    return 'Selecciona o crea un workspace.';
+  }
+
+  if (settings.actionId.trim().length === 0) {
+    return 'Selecciona una accion remota.';
+  }
+
+  if (requireManualId && settings.manualId.trim().length === 0) {
+    return 'Selecciona o crea un manual remoto antes de sincronizar pasos.';
+  }
+
+  return null;
+}
+
+function buildBackendSyncStatusText(): string {
+  if (backendSettingsDirty) {
+    return 'Hay cambios de conexion sin guardar. Guarda o valida antes de seguir capturando.';
+  }
+
+  if (!currentBackendSettings.enabled) {
+    return 'La sincronizacion remota esta desactivada. El flujo actual sigue siendo local.';
+  }
+
+  if (currentBackendSettings.lastError !== null) {
+    return `Ultimo error remoto: ${currentBackendSettings.lastError}`;
+  }
+
+  const configurationWarning = getBackendSettingsConfigurationError(currentBackendSettings, false);
+  if (configurationWarning !== null) {
+    return `${configurationWarning} Las capturas seguiran guardandose solo de forma local hasta completar la configuracion.`;
+  }
+
+  const summary: string[] = [
+    `API: ${currentBackendSettings.workspaceName ?? currentBackendSettings.apiBaseUrl}`,
+  ];
+  if (currentBackendSettings.username.trim().length > 0) {
+    summary.push(`Usuario: ${currentBackendSettings.displayName || currentBackendSettings.username}`);
+  }
+
+  const selectedSystem = getSelectedRemoteSystem();
+  const selectedModule = getSelectedRemoteModule();
+  const selectedAction = getSelectedRemoteAction();
+  const selectedManual = getSelectedRemoteManual();
+
+  if (selectedSystem !== null) {
+    summary.push(`Sistema: ${selectedSystem.name}`);
+  }
+
+  if (selectedModule !== null) {
+    summary.push(`Modulo: ${selectedModule.name}`);
+  }
+
+  if (selectedAction !== null) {
+    summary.push(`Accion: ${selectedAction.name}`);
+  } else {
+    summary.push(`Action: ${shortenIdentifier(currentBackendSettings.actionId)}`);
+  }
+
+  if (currentBackendSettings.manualId.trim().length > 0) {
+    summary.push(`Manual: ${selectedManual?.title ?? shortenIdentifier(currentBackendSettings.manualId)}`);
+  } else {
+    summary.push('Sin manual remoto asignado');
+  }
+
+  if (currentBackendSettings.sessionId !== null) {
+    summary.push(`Sesion: ${shortenIdentifier(currentBackendSettings.sessionId)}`);
+  } else {
+    summary.push('La sesion remota se creara con la siguiente captura');
+  }
+
+  if (currentBackendSettings.lastValidatedAt !== null) {
+    summary.push(`Validado: ${formatTimestamp(currentBackendSettings.lastValidatedAt)}`);
+  }
+
+  return summary.join(' | ');
+}
+
 async function persistPendingEditsIfNeeded(): Promise<void> {
   if (!stepFormDirty && !manualMetaDirty) {
     return;
   }
 
-  const manualDraft = await loadManualDraft();
-  let nextDraft: ManualDraft = manualDraft;
+  let nextDraft: ManualDraft = await loadManualDraft();
 
   if (stepFormDirty && selectedStepId !== null) {
-    nextDraft = {
-      ...nextDraft,
-      steps: nextDraft.steps.map((step) => (
-        step.id === selectedStepId
-          ? {
-              ...step,
-              title: sanitizeStepTitle(stepFormTitle) || 'Elemento seleccionado',
-              description: sanitizeStepDescription(stepFormDescription),
-            }
-          : step
-      )),
-    };
-
+    nextDraft = await persistStepEdits(
+      nextDraft,
+      selectedStepId,
+      sanitizeStepTitle(stepFormTitle) || 'Elemento seleccionado',
+      sanitizeStepDescription(stepFormDescription),
+    );
     stepFormDirty = false;
   }
 
@@ -1035,6 +2508,50 @@ async function persistPendingEditsIfNeeded(): Promise<void> {
 
   await saveManualDraft(nextDraft);
   await refreshState();
+}
+
+async function persistStepEdits(
+  manualDraft: ManualDraft,
+  stepId: string,
+  title: string,
+  description: string,
+): Promise<ManualDraft> {
+  const editedAt = new Date().toISOString();
+  const locallyUpdatedDraft: ManualDraft = {
+    ...manualDraft,
+    steps: manualDraft.steps.map((step) => (
+      step.id === stepId
+        ? {
+            ...step,
+            title,
+            description,
+            updatedAt: editedAt,
+          }
+        : step
+    )),
+  };
+
+  await saveManualDraft(locallyUpdatedDraft);
+
+  const locallyUpdatedStep = locallyUpdatedDraft.steps.find((step) => step.id === stepId) ?? null;
+  if (locallyUpdatedStep === null) {
+    return loadManualDraft();
+  }
+
+  const remotelyUpdatedStep = await syncEditedStepToBackend(locallyUpdatedStep);
+  if (remotelyUpdatedStep === locallyUpdatedStep) {
+    return loadManualDraft();
+  }
+
+  const remotelyUpdatedDraft: ManualDraft = {
+    ...locallyUpdatedDraft,
+    steps: locallyUpdatedDraft.steps.map((step) => (
+      step.id === stepId ? remotelyUpdatedStep : step
+    )),
+  };
+
+  await saveManualDraft(remotelyUpdatedDraft);
+  return loadManualDraft();
 }
 
 function drawCapturePreviewToCanvas(
@@ -1196,6 +2713,26 @@ function syncManualMetaFormState(): void {
   manualDescriptionDraft = currentDraft.description;
 }
 
+function syncBackendSettingsFormState(): void {
+  if (backendSettingsDirty) {
+    return;
+  }
+
+  backendSyncEnabledDraft = currentBackendSettings.enabled;
+  backendApiBaseUrlDraft = currentBackendSettings.apiBaseUrl;
+  backendAuthTokenDraft = currentBackendSettings.authToken;
+  backendUserIdDraft = currentBackendSettings.userId;
+  backendUsernameDraft = currentBackendSettings.username;
+  backendDisplayNameDraft = currentBackendSettings.displayName;
+  backendPasswordDraft = '';
+  backendStartedByDraft = currentBackendSettings.startedBy;
+  backendWorkspaceIdDraft = currentBackendSettings.workspaceId;
+  backendSystemIdDraft = currentBackendSettings.systemId;
+  backendModuleIdDraft = currentBackendSettings.moduleId;
+  backendActionIdDraft = currentBackendSettings.actionId;
+  backendManualIdDraft = currentBackendSettings.manualId;
+}
+
 function getStatusPresentation(
   state: CapturePanelState,
   busy: boolean,
@@ -1266,6 +2803,17 @@ function formatTimestamp(isoDate: string): string {
   });
 }
 
+function formatRemoteSyncStatus(status: ManualStep['remoteSyncStatus'] | CapturedSelectionRecord['remoteSyncStatus']): string {
+  switch (status) {
+    case 'synced':
+      return 'Remoto OK';
+    case 'error':
+      return 'Remoto con error';
+    default:
+      return 'Solo local';
+  }
+}
+
 function formatRect(rect: SelectionRect): string {
   return `x:${Math.round(rect.x)} y:${Math.round(rect.y)} | ${Math.round(rect.width)}x${Math.round(rect.height)} px`;
 }
@@ -1292,6 +2840,10 @@ function getPreviewCaption(mode: PreviewMode): string {
   }
 
   return 'Pantalla completa: mantiene la captura visible completa y resalta el elemento dentro del viewport.';
+}
+
+function getEffectiveManualTitle(): string {
+  return sanitizeManualTitle(manualTitleDraft) || currentDraft.title || 'Manual de usuario';
 }
 
 function getImageScale(
@@ -1354,6 +2906,18 @@ function buildExportStamp(): string {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
+function shortenIdentifier(value: string): string {
+  return value.length <= 12 ? value : `${value.slice(0, 8)}...${value.slice(-4)}`;
+}
+
+function parseWorkspaceMemberRole(value: string): RemoteWorkspaceMemberRole {
+  if (value === 'admin' || value === 'viewer') {
+    return value;
+  }
+
+  return 'editor';
+}
+
 function buildStepFileBaseName(step: ManualStep): string {
   return `manual-step-${String(step.order).padStart(2, '0')}-${slugify(step.title)}`;
 }
@@ -1401,7 +2965,7 @@ function getErrorMessage(error: unknown): string {
     return error.message;
   }
 
-  return 'Error desconocido al cargar la vista previa.';
+  return 'Se produjo un error desconocido.';
 }
 
 function queryElement<TElement extends HTMLElement>(id: string): TElement {

@@ -4,7 +4,7 @@ import { MANUAL_BUILDER_ENTITIES } from './entities';
 
 export function createTypeOrmOptions(configService: ConfigService): TypeOrmModuleOptions {
   const databaseUrl = configService.get<string>('DATABASE_URL')?.trim();
-  const synchronize = parseBoolean(configService.get<string>('DB_SYNCHRONIZE'), true);
+  const synchronize = parseBoolean(configService.get<string>('DB_SYNCHRONIZE'), false);
   const logging = parseBoolean(configService.get<string>('DB_LOGGING'), false);
   const sslEnabled = parseBoolean(configService.get<string>('DB_SSL'), false);
 
@@ -15,10 +15,10 @@ export function createTypeOrmOptions(configService: ConfigService): TypeOrmModul
           url: databaseUrl,
         }
       : {
-          host: configService.get<string>('DB_HOST', '127.0.0.1'),
-          port: parseInteger(configService.get<string>('DB_PORT'), 5432),
+          host: configService.get<string>('DB_HOST', '172.17.102.45'),
+          port: parseInteger(configService.get<string>('DB_PORT'), 3311),
           username: configService.get<string>('DB_USERNAME', 'postgres'),
-          password: configService.get<string>('DB_PASSWORD', 'postgres'),
+          password: configService.get<string>('DB_PASSWORD', '@@pruebasdb2024'),
           database: configService.get<string>('DB_DATABASE', 'manual_builder'),
         }),
     schema: configService.get<string>('DB_SCHEMA', 'public'),

@@ -1,16 +1,34 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
+import { type AuthenticatedUser } from '../auth/auth.types';
 import { ManualBuilderRepository } from '../data/manual-builder.repository';
-import { type AddStepFromCaptureInput, type CreateManualInput } from '../domain/manual-builder.types';
+import {
+  type AddStepFromCaptureInput,
+  type CreateManualInput,
+  type UpdateManualStepInput,
+} from '../domain/manual-builder.types';
 
 @Injectable()
 export class ManualsService {
   constructor(private readonly repository: ManualBuilderRepository) {}
 
-  createManual(input: CreateManualInput) {
-    return this.repository.createManual(input);
+  async createManual(user: AuthenticatedUser, input: CreateManualInput) {
+    await this.repository.ensureUserCanEditWorkspace(
+      user.id,
+      await this.repository.getWorkspaceIdByActionId(input.actionId),
+    );
+
+    return this.repository.createManual({
+      ...input,
+      createdBy: user.displayName || user.username,
+    });
   }
 
-  async listManualsByAction(actionId: string) {
+  async listManualsByAction(user: AuthenticatedUser, actionId: string) {
+    await this.repository.ensureUserCanAccessWorkspace(
+      user.id,
+      await this.repository.getWorkspaceIdByActionId(actionId),
+    );
+
     const manuals = await this.repository.listManualsByActionId(actionId);
 
     return Promise.all(manuals.map(async (manual) => {
@@ -25,7 +43,12 @@ export class ManualsService {
     }));
   }
 
-  async getManual(manualId: string) {
+  async getManual(user: AuthenticatedUser, manualId: string) {
+    await this.repository.ensureUserCanAccessWorkspace(
+      user.id,
+      await this.repository.getWorkspaceIdByManualId(manualId),
+    );
+
     const manual = await this.repository.findManualById(manualId);
     const action = await this.repository.findActionById(manual.actionId);
     const systemModule = await this.repository.findSystemModuleById(action.moduleId);
@@ -46,8 +69,30 @@ export class ManualsService {
     };
   }
 
-  async addStepFromCapture(manualId: string, input: AddStepFromCaptureInput) {
+  async addStepFromCapture(user: AuthenticatedUser, manualId: string, input: AddStepFromCaptureInput) {
+    const manualWorkspaceId = await this.repository.getWorkspaceIdByManualId(manualId);
+    await this.repository.ensureUserCanEditWorkspace(user.id, manualWorkspaceId);
+
+    const captureWorkspaceId = await this.repository.getWorkspaceIdByCaptureId(input.captureId);
+    if (manualWorkspaceId !== captureWorkspaceId) {
+      throw new ConflictException('La captura no pertenece al mismo workspace que el manual.');
+    }
+
     const step = await this.repository.addStepFromCapture(manualId, input);
+
+    return {
+      step,
+      asset: await this.repository.findAssetById(step.assetId),
+    };
+  }
+
+  async updateManualStep(user: AuthenticatedUser, stepId: string, input: UpdateManualStepInput) {
+    await this.repository.ensureUserCanEditWorkspace(
+      user.id,
+      await this.repository.getWorkspaceIdByManualStepId(stepId),
+    );
+
+    const step = await this.repository.updateManualStep(stepId, input);
 
     return {
       step,

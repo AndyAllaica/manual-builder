@@ -10,7 +10,12 @@ export class AppController {
       version: '0.1.0',
       purpose: 'Backend base para catalogo de sistemas, sesiones de captura y manuales de usuario.',
       routes: [
-        '/api/v1/catalog/workspace',
+        '/api/v1/auth/register',
+        '/api/v1/auth/login',
+        '/api/v1/auth/me',
+        '/api/v1/workspaces',
+        '/api/v1/workspaces/:workspaceId/members',
+        '/api/v1/catalog/workspaces/:workspaceId',
         '/api/v1/catalog/systems/:systemId',
         '/api/v1/catalog/systems',
         '/api/v1/catalog/modules',
@@ -25,7 +30,7 @@ export class AppController {
         '/api/v1/capture-sessions/captures/:captureId',
       ],
       nextStage: [
-        'Autenticacion CAS/OIDC',
+        'Administracion visual de usuarios y roles',
         'Proveedor de almacenamiento OneDrive/SharePoint via Microsoft Graph',
         'Conexion directa de la extension al backend con sesiones y capturas persistentes',
       ],

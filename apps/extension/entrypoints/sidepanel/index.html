@@ -47,6 +47,155 @@
           </p>
         </section>
 
+        <section class="backend-section">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Backend</p>
+              <h2>Sincronizacion remota</h2>
+            </div>
+            <label class="field-checkbox" for="backend-sync-enabled-input">
+              <input id="backend-sync-enabled-input" type="checkbox" />
+              <span>Activar</span>
+            </label>
+          </div>
+
+          <div class="document-meta backend-meta">
+            <label class="field field-wide">
+              <span class="field-label">URL base del API</span>
+              <input
+                id="backend-api-url-input"
+                class="field-input"
+                type="text"
+                placeholder="http://localhost:3001"
+              />
+            </label>
+            <label class="field">
+              <span class="field-label">Usuario login</span>
+              <input
+                id="backend-username-input"
+                class="field-input"
+                type="text"
+                maxlength="80"
+                placeholder="anderson"
+              />
+            </label>
+            <label class="field">
+              <span class="field-label">Contrasena</span>
+              <input
+                id="backend-password-input"
+                class="field-input"
+                type="password"
+                maxlength="120"
+                placeholder="Minimo 6 caracteres"
+              />
+            </label>
+            <label class="field">
+              <span class="field-label">Responsable</span>
+              <input
+                id="backend-started-by-input"
+                class="field-input"
+                type="text"
+                maxlength="120"
+                placeholder="usuario.institucional"
+              />
+            </label>
+            <label class="field">
+              <span class="field-label">Workspace</span>
+              <select id="backend-workspace-select" class="field-input"></select>
+            </label>
+            <label class="field">
+              <span class="field-label">Sistema</span>
+              <select id="backend-system-select" class="field-input"></select>
+            </label>
+            <label class="field">
+              <span class="field-label">Modulo</span>
+              <select id="backend-module-select" class="field-input"></select>
+            </label>
+            <label class="field field-wide">
+              <span class="field-label">Accion</span>
+              <select id="backend-action-select" class="field-input"></select>
+            </label>
+            <label class="field field-wide">
+              <span class="field-label">Manual remoto</span>
+              <select id="backend-manual-select" class="field-input"></select>
+            </label>
+          </div>
+
+          <div class="catalog-create-grid">
+            <label class="field">
+              <span class="field-label">Nuevo workspace</span>
+              <input id="new-workspace-name-input" class="field-input" type="text" maxlength="120" />
+            </label>
+            <button id="create-workspace-button" class="secondary-button catalog-create-button" type="button">
+              Crear workspace
+            </button>
+
+            <label class="field">
+              <span class="field-label">Nuevo sistema</span>
+              <input id="new-system-name-input" class="field-input" type="text" maxlength="120" />
+            </label>
+            <button id="create-system-button" class="secondary-button catalog-create-button" type="button">
+              Crear sistema
+            </button>
+
+            <label class="field">
+              <span class="field-label">Nuevo modulo</span>
+              <input id="new-module-name-input" class="field-input" type="text" maxlength="120" />
+            </label>
+            <button id="create-module-button" class="secondary-button catalog-create-button" type="button">
+              Crear modulo
+            </button>
+
+            <label class="field">
+              <span class="field-label">Nueva accion</span>
+              <input id="new-action-name-input" class="field-input" type="text" maxlength="120" />
+            </label>
+            <button id="create-action-button" class="secondary-button catalog-create-button" type="button">
+              Crear accion
+            </button>
+
+            <label class="field">
+              <span class="field-label">Agregar colaborador</span>
+              <input id="collaborator-username-input" class="field-input" type="text" maxlength="80" />
+            </label>
+            <div class="collaborator-actions">
+              <select id="collaborator-role-select" class="field-input">
+                <option value="editor">Editor</option>
+                <option value="admin">Admin</option>
+                <option value="viewer">Solo lectura</option>
+              </select>
+              <button id="add-collaborator-button" class="secondary-button catalog-create-button" type="button">
+                Agregar
+              </button>
+            </div>
+          </div>
+
+          <p id="backend-sync-status-text" class="summary-text">
+            La sincronizacion remota esta desactivada. El flujo actual sigue siendo local.
+          </p>
+
+          <div class="export-actions">
+            <button id="backend-login-button" class="primary-button" type="button">
+              Entrar
+            </button>
+            <button id="backend-register-button" class="secondary-button" type="button">
+              Registrar
+            </button>
+            <button id="save-backend-settings-button" class="secondary-button" type="button">
+              Guardar conexion
+            </button>
+            <button id="validate-backend-button" class="ghost-button" type="button">
+              Cargar catalogo
+            </button>
+            <button id="create-remote-manual-button" class="primary-button" type="button">
+              Crear manual remoto
+            </button>
+            <button id="load-remote-manual-button" class="ghost-button" type="button">
+              Cargar manual remoto
+            </button>
+          </div>
+        </section>
+
         <section id="pending-section" class="pending-section" hidden>
           <div class="pending-spinner" aria-hidden="true"></div>
           <div>

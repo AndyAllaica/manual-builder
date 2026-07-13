@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { type AuthenticatedUser } from '../auth/auth.types';
 import { ManualBuilderRepository } from '../data/manual-builder.repository';
 import { type CreateActionInput, type CreateSystemInput, type CreateSystemModuleInput } from '../domain/manual-builder.types';
 
@@ -6,9 +7,19 @@ import { type CreateActionInput, type CreateSystemInput, type CreateSystemModule
 export class CatalogService {
   constructor(private readonly repository: ManualBuilderRepository) {}
 
-  async getWorkspaceOverview() {
-    const workspace = await this.repository.getWorkspace();
-    const systems = await this.repository.listSystems();
+  async getWorkspaceOverview(user: AuthenticatedUser) {
+    const workspace = await this.repository.getFirstWorkspaceForUser(user.id);
+    return this.buildWorkspaceOverview(workspace.id);
+  }
+
+  async getWorkspaceOverviewById(user: AuthenticatedUser, workspaceId: string) {
+    await this.repository.ensureUserCanAccessWorkspace(user.id, workspaceId);
+    return this.buildWorkspaceOverview(workspaceId);
+  }
+
+  private async buildWorkspaceOverview(workspaceId: string) {
+    const workspace = await this.repository.findWorkspaceById(workspaceId);
+    const systems = await this.repository.listSystemsByWorkspaceId(workspace.id);
 
     const systemsWithChildren = await Promise.all(systems.map(async (system) => {
       const systemModules = await this.repository.listSystemModulesBySystemId(system.id);
@@ -53,7 +64,12 @@ export class CatalogService {
     };
   }
 
-  async getSystemTree(systemId: string) {
+  async getSystemTree(user: AuthenticatedUser, systemId: string) {
+    await this.repository.ensureUserCanAccessWorkspace(
+      user.id,
+      await this.repository.getWorkspaceIdBySystemId(systemId),
+    );
+
     const system = await this.repository.findSystemById(systemId);
     const systemModules = await this.repository.listSystemModulesBySystemId(system.id);
 
@@ -83,15 +99,26 @@ export class CatalogService {
     };
   }
 
-  createSystem(input: CreateSystemInput) {
+  async createSystem(user: AuthenticatedUser, input: CreateSystemInput) {
+    await this.repository.ensureUserCanEditWorkspace(user.id, input.workspaceId);
     return this.repository.createSystem(input);
   }
 
-  createSystemModule(input: CreateSystemModuleInput) {
+  async createSystemModule(user: AuthenticatedUser, input: CreateSystemModuleInput) {
+    await this.repository.ensureUserCanEditWorkspace(
+      user.id,
+      await this.repository.getWorkspaceIdBySystemId(input.systemId),
+    );
+
     return this.repository.createSystemModule(input);
   }
 
-  createAction(input: CreateActionInput) {
+  async createAction(user: AuthenticatedUser, input: CreateActionInput) {
+    await this.repository.ensureUserCanEditWorkspace(
+      user.id,
+      await this.repository.getWorkspaceIdBySystemModuleId(input.moduleId),
+    );
+
     return this.repository.createAction(input);
   }
 }

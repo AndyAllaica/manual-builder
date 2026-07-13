@@ -4,11 +4,38 @@ export type CaptureReviewStatus = 'pending' | 'approved' | 'discarded';
 export type CaptureSessionStatus = 'open' | 'in_review' | 'closed';
 export type ManualStatus = 'draft' | 'published' | 'archived';
 export type ManualVersionStatus = 'draft' | 'published' | 'archived';
+export type UserStatus = 'active' | 'disabled';
+export type WorkspaceMemberRole = 'owner' | 'admin' | 'editor' | 'viewer';
+
+export interface UserRecord {
+  id: string;
+  username: string;
+  displayName: string;
+  email: string | null;
+  status: UserStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserWithPasswordRecord extends UserRecord {
+  passwordHash: string;
+}
 
 export interface WorkspaceRecord {
   id: string;
   name: string;
   description: string;
+}
+
+export interface WorkspaceMemberRecord {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  role: WorkspaceMemberRole;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SystemRecord {
@@ -122,6 +149,24 @@ export interface StoredAssetInput {
   sizeBytes: number;
 }
 
+export interface CreateUserInput {
+  username: string;
+  displayName?: string;
+  email?: string | null;
+  passwordHash: string;
+}
+
+export interface CreateWorkspaceInput {
+  name: string;
+  description?: string;
+  ownerUserId: string;
+}
+
+export interface AddWorkspaceMemberInput {
+  username: string;
+  role: WorkspaceMemberRole;
+}
+
 export interface CreateSystemInput {
   workspaceId: string;
   key?: string;
@@ -174,6 +219,7 @@ export interface ReviewCaptureInput {
   title?: string;
   description?: string;
   framing?: ManualImageFraming;
+  contextAsset?: StoredAssetInput | null;
 }
 
 export interface AddStepFromCaptureInput {
@@ -181,4 +227,9 @@ export interface AddStepFromCaptureInput {
   title?: string;
   description?: string;
   framing?: ManualImageFraming;
+}
+
+export interface UpdateManualStepInput {
+  title?: string;
+  description?: string;
 }

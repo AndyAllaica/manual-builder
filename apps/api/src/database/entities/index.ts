@@ -7,6 +7,8 @@ import { ManualStepEntity } from './manual-step.entity';
 import { ManualVersionEntity } from './manual-version.entity';
 import { SystemEntity } from './system.entity';
 import { SystemModuleEntity } from './system-module.entity';
+import { UserEntity } from './user.entity';
+import { WorkspaceMemberEntity } from './workspace-member.entity';
 import { WorkspaceEntity } from './workspace.entity';
 
 export {
@@ -19,11 +21,15 @@ export {
   ManualVersionEntity,
   SystemEntity,
   SystemModuleEntity,
+  UserEntity,
+  WorkspaceMemberEntity,
   WorkspaceEntity,
 };
 
 export const MANUAL_BUILDER_ENTITIES = [
+  UserEntity,
   WorkspaceEntity,
+  WorkspaceMemberEntity,
   SystemEntity,
   SystemModuleEntity,
   ActionEntity,

@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { type CaptureReviewStatus, type ManualImageFraming } from '../../domain/manual-builder.types';
 
 export class ReviewCaptureDto {
@@ -18,4 +18,8 @@ export class ReviewCaptureDto {
   @IsOptional()
   @IsEnum(['context', 'full'])
   framing?: ManualImageFraming;
+
+  @IsOptional()
+  @Matches(/^data:image\/[a-z0-9.+-]+;base64,/i)
+  contextImageDataUrl?: string | null;
 }

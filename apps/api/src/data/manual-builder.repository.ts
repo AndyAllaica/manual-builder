@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, Repository } from 'typeorm';
@@ -12,10 +12,13 @@ import {
   ManualVersionEntity,
   SystemEntity,
   SystemModuleEntity,
+  UserEntity,
+  WorkspaceMemberEntity,
   WorkspaceEntity,
 } from '../database/entities';
 import {
   type ActionRecord,
+  type AddWorkspaceMemberInput,
   type AddStepFromCaptureInput,
   type AssetRecord,
   type CaptureRecord,
@@ -26,12 +29,19 @@ import {
   type CreateManualInput,
   type CreateSystemInput,
   type CreateSystemModuleInput,
+  type CreateUserInput,
+  type CreateWorkspaceInput,
   type ManualRecord,
   type ManualStepRecord,
   type ManualVersionRecord,
   type ReviewCaptureInput,
   type SystemModuleRecord,
   type SystemRecord,
+  type UpdateManualStepInput,
+  type UserRecord,
+  type UserWithPasswordRecord,
+  type WorkspaceMemberRecord,
+  type WorkspaceMemberRole,
   type WorkspaceRecord,
 } from '../domain/manual-builder.types';
 
@@ -39,8 +49,12 @@ import {
 export class ManualBuilderRepository {
   constructor(
     private readonly dataSource: DataSource,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: Repository<UserEntity>,
     @InjectRepository(WorkspaceEntity)
     private readonly workspaceRepository: Repository<WorkspaceEntity>,
+    @InjectRepository(WorkspaceMemberEntity)
+    private readonly workspaceMemberRepository: Repository<WorkspaceMemberEntity>,
     @InjectRepository(SystemEntity)
     private readonly systemRepository: Repository<SystemEntity>,
     @InjectRepository(SystemModuleEntity)
@@ -61,16 +75,185 @@ export class ManualBuilderRepository {
     private readonly manualStepRepository: Repository<ManualStepEntity>,
   ) {}
 
-  async getWorkspace(): Promise<WorkspaceRecord> {
-    const workspace = await this.workspaceRepository.findOne({
+  async createUser(input: CreateUserInput): Promise<UserRecord> {
+    const username = normalizeUsername(input.username);
+    const displayName = normalizeOptionalText(input.displayName) ?? username;
+    const user = this.userRepository.create({
+      id: randomUUID(),
+      username,
+      displayName,
+      email: normalizeEmail(input.email),
+      passwordHash: input.passwordHash,
+      status: 'active',
+    });
+
+    try {
+      await this.userRepository.save(user);
+
+      if (await this.workspaceMemberRepository.count() === 0) {
+        await this.assignExistingWorkspacesToOwner(user.id);
+      }
+
+      return toUserRecord(user);
+    } catch (error) {
+      throw normalizePersistenceError(error, 'Ya existe un usuario con ese nombre.');
+    }
+  }
+
+  async findUserByUsername(username: string): Promise<UserWithPasswordRecord | null> {
+    const user = await this.userRepository.findOneBy({ username: normalizeUsername(username) });
+    return user === null ? null : toUserWithPasswordRecord(user);
+  }
+
+  async findUserById(userId: string): Promise<UserRecord | null> {
+    const user = await this.userRepository.findOneBy({ id: userId });
+    return user === null ? null : toUserRecord(user);
+  }
+
+  async createWorkspace(input: CreateWorkspaceInput): Promise<WorkspaceRecord> {
+    await this.ensureUserExists(input.ownerUserId);
+
+    return this.dataSource.transaction(async (manager) => {
+      const workspace = manager.create(WorkspaceEntity, {
+        id: randomUUID(),
+        name: normalizeRequiredText(input.name, 'El nombre del workspace es obligatorio.'),
+        description: normalizeOptionalText(input.description) ?? '',
+      });
+
+      await manager.save(workspace);
+
+      const membership = manager.create(WorkspaceMemberEntity, {
+        id: randomUUID(),
+        workspaceId: workspace.id,
+        userId: input.ownerUserId,
+        role: 'owner',
+      });
+
+      await manager.save(membership);
+      return toWorkspaceRecord(workspace);
+    });
+  }
+
+  async listWorkspacesForUser(userId: string): Promise<WorkspaceRecord[]> {
+    const memberships = await this.workspaceMemberRepository.find({
+      where: { userId },
+      relations: { workspace: true },
       order: { createdAt: 'ASC' },
     });
 
+    return memberships
+      .filter((membership) => membership.workspace !== undefined)
+      .map((membership) => toWorkspaceRecord(membership.workspace));
+  }
+
+  async listWorkspaceMembers(workspaceId: string): Promise<WorkspaceMemberRecord[]> {
+    await this.ensureWorkspaceExists(workspaceId);
+
+    const memberships = await this.workspaceMemberRepository.find({
+      where: { workspaceId },
+      relations: { user: true },
+      order: { createdAt: 'ASC' },
+    });
+
+    return memberships.map(toWorkspaceMemberRecord);
+  }
+
+  async addWorkspaceMember(workspaceId: string, input: AddWorkspaceMemberInput): Promise<WorkspaceMemberRecord> {
+    await this.ensureWorkspaceExists(workspaceId);
+
+    const user = await this.userRepository.findOneBy({ username: normalizeUsername(input.username) });
+    if (user === null) {
+      throw new NotFoundException(`Usuario no encontrado: ${input.username}`);
+    }
+
+    const existingMembership = await this.workspaceMemberRepository.findOne({
+      where: { workspaceId, userId: user.id },
+      relations: { user: true },
+    });
+
+    if (existingMembership !== null) {
+      existingMembership.role = input.role;
+      await this.workspaceMemberRepository.save(existingMembership);
+      return toWorkspaceMemberRecord(existingMembership);
+    }
+
+    const membership = this.workspaceMemberRepository.create({
+      id: randomUUID(),
+      workspaceId,
+      userId: user.id,
+      role: input.role,
+      user,
+    });
+
+    try {
+      await this.workspaceMemberRepository.save(membership);
+      return toWorkspaceMemberRecord(membership);
+    } catch (error) {
+      throw normalizePersistenceError(error, 'El usuario ya pertenece a ese workspace.');
+    }
+  }
+
+  async ensureUserCanAccessWorkspace(userId: string, workspaceId: string): Promise<void> {
+    const membership = await this.findWorkspaceMembership(userId, workspaceId);
+    if (membership === null) {
+      throw new ForbiddenException('No tienes acceso a este workspace.');
+    }
+  }
+
+  async ensureUserCanEditWorkspace(userId: string, workspaceId: string): Promise<void> {
+    const membership = await this.findWorkspaceMembership(userId, workspaceId);
+    if (membership === null || !canEditWorkspace(membership.role)) {
+      throw new ForbiddenException('No tienes permisos para modificar este workspace.');
+    }
+  }
+
+  async ensureUserCanManageWorkspace(userId: string, workspaceId: string): Promise<void> {
+    const membership = await this.findWorkspaceMembership(userId, workspaceId);
+    if (membership === null || !canManageWorkspace(membership.role)) {
+      throw new ForbiddenException('Solo un owner o admin puede administrar miembros del workspace.');
+    }
+  }
+
+  async getFirstWorkspaceForUser(userId: string): Promise<WorkspaceRecord> {
+    const workspaces = await this.listWorkspacesForUser(userId);
+    const firstWorkspace = workspaces[0] ?? null;
+    if (firstWorkspace === null) {
+      throw new NotFoundException('No tienes ningun workspace asignado. Crea uno o pide que te agreguen.');
+    }
+
+    return firstWorkspace;
+  }
+
+  async findWorkspaceById(workspaceId: string): Promise<WorkspaceRecord> {
+    const workspace = await this.workspaceRepository.findOneBy({ id: workspaceId });
     if (workspace === null) {
-      throw new NotFoundException('No existe ningun espacio de trabajo configurado.');
+      throw new NotFoundException(`Workspace no encontrado: ${workspaceId}`);
     }
 
     return toWorkspaceRecord(workspace);
+  }
+
+  async getWorkspace(): Promise<WorkspaceRecord> {
+    const workspace = await this.workspaceRepository.find({
+      order: { createdAt: 'ASC' },
+      take: 1,
+    });
+
+    const firstWorkspace = workspace[0] ?? null;
+    if (firstWorkspace === null) {
+      throw new NotFoundException('No existe ningun espacio de trabajo configurado.');
+    }
+
+    return toWorkspaceRecord(firstWorkspace);
+  }
+
+  async listSystemsByWorkspaceId(workspaceId: string): Promise<SystemRecord[]> {
+    const systems = await this.systemRepository.find({
+      where: { workspaceId },
+      order: { name: 'ASC' },
+    });
+
+    return systems.map(toSystemRecord);
   }
 
   async listSystems(): Promise<SystemRecord[]> {
@@ -398,13 +581,37 @@ export class ManualBuilderRepository {
         throw new NotFoundException(`Captura no encontrada: ${captureId}`);
       }
 
+      const previousContextAssetId = capture.contextAssetId;
+      let nextContextAssetId = capture.contextAssetId;
+
+      if (input.contextAsset !== null && input.contextAsset !== undefined) {
+        const contextAsset = manager.create(AssetEntity, {
+          id: randomUUID(),
+          provider: input.contextAsset.provider,
+          kind: 'context',
+          mimeType: input.contextAsset.mimeType,
+          fileName: input.contextAsset.fileName,
+          storagePath: input.contextAsset.storagePath,
+          publicUrl: input.contextAsset.publicUrl,
+          sizeBytes: input.contextAsset.sizeBytes,
+        });
+
+        await manager.save(contextAsset);
+        nextContextAssetId = contextAsset.id;
+      }
+
       capture.status = input.status;
       capture.title = normalizeOptionalText(input.title) ?? capture.title;
       capture.description = normalizeOptionalText(input.description) ?? capture.description;
       capture.framing = input.framing ?? capture.framing;
+      capture.contextAssetId = nextContextAssetId;
       capture.updatedAt = new Date();
 
       await manager.save(capture);
+
+      if (previousContextAssetId !== null && nextContextAssetId !== previousContextAssetId) {
+        await manager.delete(AssetEntity, { id: previousContextAssetId });
+      }
 
       const pendingCaptures = await manager.count(CaptureEntity, {
         where: { sessionId: capture.sessionId, status: 'pending' },
@@ -494,8 +701,107 @@ export class ManualBuilderRepository {
     });
   }
 
+  async updateManualStep(stepId: string, input: UpdateManualStepInput): Promise<ManualStepRecord> {
+    return this.dataSource.transaction(async (manager) => {
+      const step = await manager.findOne(ManualStepEntity, {
+        where: { id: stepId },
+      });
+
+      if (step === null) {
+        throw new NotFoundException(`Paso del manual no encontrado: ${stepId}`);
+      }
+
+      const version = await manager.findOne(ManualVersionEntity, {
+        where: { id: step.versionId },
+      });
+      if (version === null) {
+        throw new NotFoundException(`Version no encontrada: ${step.versionId}`);
+      }
+
+      const manual = await manager.findOne(ManualEntity, {
+        where: { id: version.manualId },
+      });
+      if (manual === null) {
+        throw new NotFoundException(`Manual no encontrado: ${version.manualId}`);
+      }
+
+      step.title = normalizeOptionalText(input.title) ?? step.title;
+      step.description = normalizeOptionalText(input.description) ?? step.description;
+      version.updatedAt = new Date();
+      manual.updatedAt = new Date();
+
+      await manager.save(step);
+      await manager.save(version);
+      await manager.save(manual);
+
+      return toManualStepRecord(step);
+    });
+  }
+
+  async getWorkspaceIdBySystemId(systemId: string): Promise<string> {
+    const system = await this.findSystemById(systemId);
+    return system.workspaceId;
+  }
+
+  async getWorkspaceIdBySystemModuleId(moduleId: string): Promise<string> {
+    const systemModule = await this.findSystemModuleById(moduleId);
+    return this.getWorkspaceIdBySystemId(systemModule.systemId);
+  }
+
+  async getWorkspaceIdByActionId(actionId: string): Promise<string> {
+    const action = await this.findActionById(actionId);
+    return this.getWorkspaceIdBySystemModuleId(action.moduleId);
+  }
+
+  async getWorkspaceIdByManualId(manualId: string): Promise<string> {
+    const manual = await this.findManualById(manualId);
+    return this.getWorkspaceIdByActionId(manual.actionId);
+  }
+
+  async getWorkspaceIdByManualStepId(stepId: string): Promise<string> {
+    const step = await this.manualStepRepository.findOneBy({ id: stepId });
+    if (step === null) {
+      throw new NotFoundException(`Paso del manual no encontrado: ${stepId}`);
+    }
+
+    const version = await this.findManualVersionById(step.versionId);
+    return this.getWorkspaceIdByManualId(version.manualId);
+  }
+
+  async getWorkspaceIdByCaptureSessionId(sessionId: string): Promise<string> {
+    const session = await this.findCaptureSessionById(sessionId);
+    return this.getWorkspaceIdByActionId(session.actionId);
+  }
+
+  async getWorkspaceIdByCaptureId(captureId: string): Promise<string> {
+    const capture = await this.findCaptureById(captureId);
+    return this.getWorkspaceIdByCaptureSessionId(capture.sessionId);
+  }
+
+  async listCaptureSessionsForUser(userId: string): Promise<CaptureSessionRecord[]> {
+    const workspaceIds = (await this.listWorkspacesForUser(userId)).map((workspace) => workspace.id);
+    if (workspaceIds.length === 0) {
+      return [];
+    }
+
+    const sessions = await this.captureSessionRepository
+      .createQueryBuilder('session')
+      .innerJoin(ActionEntity, 'action', 'action.id = session.action_id')
+      .innerJoin(SystemModuleEntity, 'module', 'module.id = action.module_id')
+      .innerJoin(SystemEntity, 'system', 'system.id = module.system_id')
+      .where('system.workspace_id IN (:...workspaceIds)', { workspaceIds })
+      .orderBy('session.updated_at', 'DESC')
+      .getMany();
+
+    return sessions.map(toCaptureSessionRecord);
+  }
+
   private async ensureWorkspaceExists(workspaceId: string): Promise<void> {
     await this.ensureEntityExists(this.workspaceRepository, workspaceId, 'Workspace');
+  }
+
+  private async ensureUserExists(userId: string): Promise<void> {
+    await this.ensureEntityExists(this.userRepository, userId, 'Usuario');
   }
 
   private async ensureSystemExists(systemId: string): Promise<void> {
@@ -527,6 +833,55 @@ export class ManualBuilderRepository {
       throw new NotFoundException(`${entityLabel} no encontrado: ${id}`);
     }
   }
+
+  private async findWorkspaceMembership(
+    userId: string,
+    workspaceId: string,
+  ): Promise<WorkspaceMemberEntity | null> {
+    return this.workspaceMemberRepository.findOneBy({ userId, workspaceId });
+  }
+
+  private async assignExistingWorkspacesToOwner(userId: string): Promise<void> {
+    const workspaces = await this.workspaceRepository.find({
+      order: { createdAt: 'ASC' },
+    });
+
+    for (const workspace of workspaces) {
+      const membershipCount = await this.workspaceMemberRepository.count({
+        where: { workspaceId: workspace.id },
+      });
+
+      if (membershipCount > 0) {
+        continue;
+      }
+
+      await this.workspaceMemberRepository.save(this.workspaceMemberRepository.create({
+        id: randomUUID(),
+        workspaceId: workspace.id,
+        userId,
+        role: 'owner',
+      }));
+    }
+  }
+}
+
+function toUserRecord(entity: UserEntity): UserRecord {
+  return {
+    id: entity.id,
+    username: entity.username,
+    displayName: entity.displayName,
+    email: entity.email,
+    status: entity.status,
+    createdAt: entity.createdAt.toISOString(),
+    updatedAt: entity.updatedAt.toISOString(),
+  };
+}
+
+function toUserWithPasswordRecord(entity: UserEntity): UserWithPasswordRecord {
+  return {
+    ...toUserRecord(entity),
+    passwordHash: entity.passwordHash,
+  };
 }
 
 function toWorkspaceRecord(entity: WorkspaceEntity): WorkspaceRecord {
@@ -534,6 +889,19 @@ function toWorkspaceRecord(entity: WorkspaceEntity): WorkspaceRecord {
     id: entity.id,
     name: entity.name,
     description: entity.description,
+  };
+}
+
+function toWorkspaceMemberRecord(entity: WorkspaceMemberEntity): WorkspaceMemberRecord {
+  return {
+    id: entity.id,
+    workspaceId: entity.workspaceId,
+    userId: entity.userId,
+    username: entity.user?.username ?? '',
+    displayName: entity.user?.displayName ?? '',
+    role: entity.role,
+    createdAt: entity.createdAt.toISOString(),
+    updatedAt: entity.updatedAt.toISOString(),
   };
 }
 
@@ -670,6 +1038,19 @@ function normalizeOptionalText(value: string | null | undefined): string | null 
   return normalizedValue.length > 0 ? normalizedValue : null;
 }
 
+function normalizeUsername(value: string): string {
+  const normalizedValue = normalizeOptionalText(value);
+  if (normalizedValue === null) {
+    throw new ConflictException('El nombre de usuario es obligatorio.');
+  }
+
+  return normalizedValue.toLowerCase();
+}
+
+function normalizeEmail(value: string | null | undefined): string | null {
+  return normalizeOptionalText(value)?.toLowerCase() ?? null;
+}
+
 function normalizeRequiredText(value: string, errorMessage: string): string {
   const normalizedValue = normalizeOptionalText(value);
   if (normalizedValue === null) {
@@ -726,4 +1107,12 @@ function isUniqueViolation(error: unknown): boolean {
 
   const candidate = error as { code?: unknown };
   return candidate.code === '23505';
+}
+
+function canEditWorkspace(role: WorkspaceMemberRole): boolean {
+  return role === 'owner' || role === 'admin' || role === 'editor';
+}
+
+function canManageWorkspace(role: WorkspaceMemberRole): boolean {
+  return role === 'owner' || role === 'admin';
 }

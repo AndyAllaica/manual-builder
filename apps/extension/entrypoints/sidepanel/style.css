@@ -41,6 +41,7 @@ body {
 .hero,
 .summary-card,
 .capture-mode-section,
+.backend-section,
 .pending-section,
 .error-section,
 .review-section,
@@ -246,6 +247,7 @@ button:disabled {
 
 .summary-card,
 .capture-mode-section,
+.backend-section,
 .pending-section,
 .error-section,
 .review-section,
@@ -383,6 +385,49 @@ button:disabled {
 
 .field-wide {
   grid-column: 1 / -1;
+}
+
+.backend-meta {
+  margin-top: 10px;
+}
+
+.catalog-create-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  align-items: end;
+  margin-top: 10px;
+}
+
+.catalog-create-button {
+  min-width: 132px;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.collaborator-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 120px) auto;
+  gap: 10px;
+}
+
+.field-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(19, 34, 56, 0.08);
+  border-radius: 999px;
+  background: rgba(19, 34, 56, 0.04);
+  color: var(--panel-text);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.field-checkbox input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--panel-accent);
 }
 
 .capture-details,
@@ -633,6 +678,8 @@ button:disabled {
 
   .detail-grid,
   .document-meta,
+  .catalog-create-grid,
+  .collaborator-actions,
   .step-editor {
     grid-template-columns: 1fr;
   }

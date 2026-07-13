@@ -3,9 +3,11 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { resolve } from 'node:path';
 import { AppController } from './app.controller';
+import { AuthModule } from './auth/auth.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { CaptureSessionsModule } from './capture-sessions/capture-sessions.module';
 import { ManualsModule } from './manuals/manuals.module';
+import { WorkspacesModule } from './workspaces/workspaces.module';
 import { createTypeOrmOptions } from './database/typeorm.config';
 
 @Module({
@@ -21,6 +23,8 @@ import { createTypeOrmOptions } from './database/typeorm.config';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => createTypeOrmOptions(configService),
     }),
+    AuthModule,
+    WorkspacesModule,
     CatalogModule,
     ManualsModule,
     CaptureSessionsModule,

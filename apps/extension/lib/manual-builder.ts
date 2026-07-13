@@ -25,6 +25,28 @@ export interface SelectedElementData {
   viewport: ViewportData;
 }
 
+export type BackendSyncStatus = 'idle' | 'synced' | 'error';
+
+export interface BackendSyncSettings {
+  enabled: boolean;
+  apiBaseUrl: string;
+  authToken: string | null;
+  userId: string | null;
+  username: string;
+  displayName: string;
+  startedBy: string;
+  workspaceId: string;
+  systemId: string;
+  moduleId: string;
+  actionId: string;
+  manualId: string;
+  sessionId: string | null;
+  sessionActionId: string | null;
+  workspaceName: string | null;
+  lastValidatedAt: string | null;
+  lastError: string | null;
+}
+
 export interface ManualStepGuide {
   title?: string;
   summary?: string;
@@ -41,6 +63,11 @@ export interface CapturedSelectionRecord {
   contextRegion: SelectionRect;
   tabId: number | null;
   windowId: number | null;
+  remoteSessionId: string | null;
+  remoteCaptureId: string | null;
+  remoteManualId: string | null;
+  remoteSyncStatus: BackendSyncStatus;
+  remoteSyncError: string | null;
 }
 
 export type ImageAssetFormat = 'jpeg' | 'png' | 'webp';
@@ -63,6 +90,11 @@ export interface ManualStep {
   updatedAt?: string;
   annotationBaked?: boolean;
   guide?: ManualStepGuide;
+  remoteManualId?: string | null;
+  remoteCaptureId?: string | null;
+  remoteStepId?: string | null;
+  remoteSyncStatus?: BackendSyncStatus;
+  remoteSyncError?: string | null;
 }
 
 export interface ManualDraft {
@@ -118,6 +150,7 @@ export const MESSAGE_TYPE_GET_CAPTURE_MODE = 'manual-builder/get-capture-mode';
 export const MESSAGE_TYPE_CLEAR_CAPTURES = 'manual-builder/clear-captures';
 export const PANEL_STATE_STORAGE_KEY = 'manualBuilderPanelState';
 export const MANUAL_DRAFT_STORAGE_KEY = 'manualBuilderDraft';
+export const BACKEND_SYNC_SETTINGS_STORAGE_KEY = 'manualBuilderBackendSyncSettings';
 export const MAX_CAPTURE_HISTORY = 12;
 export const MAX_CAPTURE_STORAGE_BYTES = 8_500_000;
 export const CAPTURE_IMAGE_FORMAT = 'jpeg';
@@ -140,6 +173,28 @@ export function createEmptyPanelState(): CapturePanelState {
     reviewSurface: 'tab',
     reviewTabId: null,
     captureMode: 'review',
+  };
+}
+
+export function createEmptyBackendSyncSettings(): BackendSyncSettings {
+  return {
+    enabled: false,
+    apiBaseUrl: 'http://localhost:3001',
+    authToken: null,
+    userId: null,
+    username: '',
+    displayName: '',
+    startedBy: '',
+    workspaceId: '',
+    systemId: '',
+    moduleId: '',
+    actionId: '',
+    manualId: '',
+    sessionId: null,
+    sessionActionId: null,
+    workspaceName: null,
+    lastValidatedAt: null,
+    lastError: null,
   };
 }
 
@@ -168,6 +223,11 @@ export function createCapturedSelectionRecord(
     contextRegion: buildContextRegion(selectedElement),
     tabId,
     windowId,
+    remoteSessionId: null,
+    remoteCaptureId: null,
+    remoteManualId: null,
+    remoteSyncStatus: 'idle',
+    remoteSyncError: null,
   };
 }
 
@@ -196,6 +256,10 @@ export function createManualStep(input: {
     selectedElement: capture.selectedElement,
     contextRegion: capture.contextRegion,
     createdAt: new Date().toISOString(),
+    remoteManualId: capture.remoteManualId,
+    remoteCaptureId: capture.remoteCaptureId,
+    remoteSyncStatus: capture.remoteSyncStatus,
+    remoteSyncError: capture.remoteSyncError,
   };
 }
 
@@ -204,7 +268,7 @@ export function normalizePanelState(state: CapturePanelState): CapturePanelState
 
   return {
     status: state.status,
-    captures: trimCapturesForStorage(state.captures),
+    captures: trimCapturesForStorage(state.captures.map(normalizeCapturedSelectionRecord)),
     pendingSelection: state.pendingSelection,
     lastError: state.lastError,
     lastUpdatedAt: state.lastUpdatedAt,
@@ -224,8 +288,34 @@ export function normalizeManualDraft(draft: ManualDraft): ManualDraft {
     createdAt: typeof draft.createdAt === 'string' && draft.createdAt.length > 0
       ? draft.createdAt
       : defaultDraft.createdAt,
-    steps: resequenceManualSteps(draft.steps),
+    steps: resequenceManualSteps(draft.steps.map(normalizeManualStep)),
     lastUpdatedAt: draft.lastUpdatedAt,
+  };
+}
+
+export function normalizeBackendSyncSettings(
+  settings: Partial<BackendSyncSettings>,
+): BackendSyncSettings {
+  const defaults = createEmptyBackendSyncSettings();
+
+  return {
+    enabled: settings.enabled ?? defaults.enabled,
+    apiBaseUrl: normalizeNullableString(settings.apiBaseUrl) ?? defaults.apiBaseUrl,
+    authToken: normalizeNullableString(settings.authToken),
+    userId: normalizeNullableString(settings.userId),
+    username: normalizeNullableString(settings.username) ?? '',
+    displayName: normalizeNullableString(settings.displayName) ?? '',
+    startedBy: normalizeNullableString(settings.startedBy) ?? '',
+    workspaceId: normalizeNullableString(settings.workspaceId) ?? '',
+    systemId: normalizeNullableString(settings.systemId) ?? '',
+    moduleId: normalizeNullableString(settings.moduleId) ?? '',
+    actionId: normalizeNullableString(settings.actionId) ?? '',
+    manualId: normalizeNullableString(settings.manualId) ?? '',
+    sessionId: normalizeNullableString(settings.sessionId),
+    sessionActionId: normalizeNullableString(settings.sessionActionId),
+    workspaceName: normalizeNullableString(settings.workspaceName),
+    lastValidatedAt: normalizeNullableString(settings.lastValidatedAt),
+    lastError: normalizeNullableString(settings.lastError),
   };
 }
 
@@ -370,6 +460,28 @@ function buildFallbackStepTitle(step: ManualStep): string {
   return 'Elemento seleccionado';
 }
 
+function normalizeCapturedSelectionRecord(capture: CapturedSelectionRecord): CapturedSelectionRecord {
+  return {
+    ...capture,
+    remoteSessionId: normalizeNullableString(capture.remoteSessionId),
+    remoteCaptureId: normalizeNullableString(capture.remoteCaptureId),
+    remoteManualId: normalizeNullableString(capture.remoteManualId),
+    remoteSyncStatus: capture.remoteSyncStatus ?? 'idle',
+    remoteSyncError: normalizeNullableString(capture.remoteSyncError),
+  };
+}
+
+function normalizeManualStep(step: ManualStep): ManualStep {
+  return {
+    ...step,
+    remoteManualId: normalizeNullableString(step.remoteManualId),
+    remoteCaptureId: normalizeNullableString(step.remoteCaptureId),
+    remoteStepId: normalizeNullableString(step.remoteStepId),
+    remoteSyncStatus: step.remoteSyncStatus ?? 'idle',
+    remoteSyncError: normalizeNullableString(step.remoteSyncError),
+  };
+}
+
 function normalizeRect(rect: SelectionRect): SelectionRect {
   return {
     x: Math.max(0, Math.round(rect.x)),
@@ -488,6 +600,15 @@ function isViewportLike(value: unknown): value is ViewportData {
 
 function isNullableString(value: unknown): value is string | null {
   return typeof value === 'string' || value === null;
+}
+
+function normalizeNullableString(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
 }
 
 function isNumber(value: unknown): value is number {

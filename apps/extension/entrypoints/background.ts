@@ -1,21 +1,26 @@
 import {
   CAPTURE_IMAGE_FORMAT,
   CAPTURE_IMAGE_QUALITY,
+  buildStepTitleSuggestion,
   createCapturedSelectionRecord,
   isClearCapturesMessage,
   isGetCaptureModeMessage,
   isSelectionCapturedMessage,
   trimCapturesForStorage,
   type CapturePanelState,
+  type CapturedSelectionRecord,
   type ReviewSurface,
   type SelectedElementData,
   type SelectionCapturedResponse,
 } from '../lib/manual-builder';
+import { loadBackendSyncSettings, saveBackendSyncSettings } from '../lib/backend-sync-state';
+import { buildRemoteCapturePayload, createManualBuilderApiClient } from '../lib/manual-builder-api';
 import { loadPanelState, savePanelState } from '../lib/panel-state';
 
 const SIDE_PANEL_PATH = 'sidepanel.html';
 const REVIEW_PAGE_PATH = '/sidepanel.html' as const;
 const CAPTURE_ERROR_PREFIX = '[Manual Builder] No se pudo generar la captura';
+const BACKEND_SYNC_ERROR_PREFIX = '[Manual Builder] No se pudo sincronizar la captura con el backend';
 
 interface SidePanelApi {
   setPanelBehavior(options: { openPanelOnActionClick: boolean }): Promise<void>;
@@ -169,12 +174,13 @@ async function processSelection(
 
   try {
     const imageDataUrl = await captureVisibleTab(sender);
-    const captureRecord = createCapturedSelectionRecord(
+    const localCaptureRecord = createCapturedSelectionRecord(
       selectedElement,
       imageDataUrl,
       sender.tab?.id ?? null,
       sender.tab?.windowId ?? null,
     );
+    const captureRecord = await syncCaptureToBackendIfEnabled(localCaptureRecord);
     const nextCaptures = trimCapturesForStorage([captureRecord, ...currentState.captures]);
 
     await savePanelState({
@@ -206,6 +212,116 @@ async function processSelection(
 
     throw error;
   }
+}
+
+async function syncCaptureToBackendIfEnabled(
+  captureRecord: CapturedSelectionRecord,
+): Promise<CapturedSelectionRecord> {
+  const settings = await loadBackendSyncSettings();
+  if (!settings.enabled) {
+    return captureRecord;
+  }
+
+  const configurationError = getBackendCaptureConfigurationError(settings);
+  if (configurationError !== null) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: configurationError,
+    });
+
+    return {
+      ...captureRecord,
+      remoteManualId: settings.manualId || null,
+      remoteSyncStatus: 'error',
+      remoteSyncError: configurationError,
+    };
+  }
+
+  try {
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    const sessionId = await ensureRemoteCaptureSession(client, settings);
+    const response = await client.createCapture(
+      sessionId,
+      buildRemoteCapturePayload(
+        captureRecord.selectedElement,
+        captureRecord.imageDataUrl,
+        buildStepTitleSuggestion(captureRecord),
+      ),
+    );
+
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      sessionId,
+      sessionActionId: settings.actionId,
+      lastError: null,
+    });
+
+    return {
+      ...captureRecord,
+      remoteSessionId: sessionId,
+      remoteCaptureId: response.capture.id,
+      remoteManualId: settings.manualId || null,
+      remoteSyncStatus: 'synced',
+      remoteSyncError: null,
+    };
+  } catch (error) {
+    const syncError = getErrorMessage(error);
+    console.warn(BACKEND_SYNC_ERROR_PREFIX, error);
+
+    await saveBackendSyncSettings({
+      ...settings,
+      sessionId: settings.sessionActionId === settings.actionId ? settings.sessionId : null,
+      sessionActionId: settings.sessionActionId === settings.actionId ? settings.sessionActionId : null,
+      lastError: syncError,
+    });
+
+    return {
+      ...captureRecord,
+      remoteSessionId: settings.sessionActionId === settings.actionId ? settings.sessionId : null,
+      remoteManualId: settings.manualId || null,
+      remoteSyncStatus: 'error',
+      remoteSyncError: syncError,
+    };
+  }
+}
+
+async function ensureRemoteCaptureSession(
+  client: ReturnType<typeof createManualBuilderApiClient>,
+  settings: Awaited<ReturnType<typeof loadBackendSyncSettings>>,
+): Promise<string> {
+  if (settings.sessionId !== null && settings.sessionActionId === settings.actionId) {
+    return settings.sessionId;
+  }
+
+  const session = await client.createCaptureSession({
+    actionId: settings.actionId,
+    startedBy: settings.startedBy,
+  });
+
+  return session.id;
+}
+
+function getBackendCaptureConfigurationError(
+  settings: Awaited<ReturnType<typeof loadBackendSyncSettings>>,
+): string | null {
+  if (settings.apiBaseUrl.trim().length === 0) {
+    return 'Configura la URL del backend antes de activar la sincronizacion remota.';
+  }
+
+  if (settings.startedBy.trim().length === 0) {
+    return 'Inicia sesion antes de activar la sincronizacion remota.';
+  }
+
+  if (settings.authToken === null || settings.authToken.trim().length === 0) {
+    return 'Inicia sesion antes de activar la sincronizacion remota.';
+  }
+
+  if (settings.actionId.trim().length === 0) {
+    return 'Configura el Action ID remoto antes de activar la sincronizacion remota.';
+  }
+
+  return null;
 }
 
 async function handleActionClick(tab: Browser.tabs.Tab): Promise<void> {

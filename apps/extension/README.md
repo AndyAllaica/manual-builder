@@ -13,12 +13,16 @@ Este paquete contiene la extension **Manual Builder** en su etapa actual. Permit
 - Activar un modo explicito de `solo captura` para acumular capturas en lote.
 - Construir una lista de pasos del manual con titulo y descripcion editables.
 - Reordenar, eliminar y exportar pasos localmente.
+- Sincronizar capturas y pasos con el backend NestJS de forma opcional.
+- Iniciar sesion con usuario/contrasena simple contra el backend.
+- Seleccionar workspaces disponibles para el usuario autenticado.
+- Crear workspaces y agregar colaboradores por nombre de usuario.
 - Definir metadatos del manual: titulo, autor y descripcion.
 - Abrir una vista final del manual.
 - Exportar un PDF profesional A4 horizontal generado por codigo.
 - Imprimir la vista final con la herramienta nativa del navegador como respaldo.
 
-La exportacion PDF funciona completamente dentro de la extension y no depende del backend. El workspace contiene un API NestJS/PostgreSQL independiente para una integracion futura; todavia no se usa en este flujo.
+La exportacion PDF funciona completamente dentro de la extension y no depende del backend. El backend actual se usa solo como sincronizacion opcional para sesiones, capturas y pasos del manual.
 
 ## 2. Requisitos
 
@@ -101,6 +105,14 @@ pnpm build:firefox
 - `Arrastrar un paso`: cambiar su posicion y renumerar automaticamente todos los pasos.
 - Los titulos guardados no incluyen `Paso n:`; ese prefijo se agrega dinamicamente solo al generar el PDF.
 - `Subir` y `Bajar`: reordenar pasos del manual.
+- `Entrar`: iniciar sesion en el backend.
+- `Registrar`: crear un usuario simple en el backend.
+- `Crear workspace`: crear un espacio de trabajo propio.
+- `Agregar colaborador`: dar acceso a otro usuario al workspace seleccionado.
+- `Guardar conexion`: persistir la configuracion del backend remoto.
+- `Cargar catalogo`: comprobar token, workspace y catalogo del API NestJS.
+- `Crear manual remoto`: generar un manual remoto para la accion seleccionada.
+- `Cargar manual remoto`: traer los pasos existentes del backend al editor local.
 - `Guardar datos del manual`: persistir titulo, autor y descripcion del documento.
 - `Abrir vista final`: abrir la composicion final del manual en una pagina de la extension.
 - `Exportar PDF`: abrir la vista final e iniciar automaticamente la misma exportacion profesional disponible en esa pagina.
@@ -121,26 +133,39 @@ pnpm build:firefox
 4. En `Revision paso a paso`, al hacer clic, la extension bloquea la accion normal del elemento y genera `SelectedElementData`.
 5. El content script envia la seleccion al service worker.
 6. El service worker captura la pestana visible y guarda el resultado en memoria de sesion para revision.
-7. La interfaz de revision permite:
+7. Si la sincronizacion remota esta activa y configurada:
+   - La extension usa el token del usuario autenticado.
+   - Solo carga workspaces donde el usuario es miembro.
+   - La extension crea o reutiliza una sesion remota para la accion seleccionada.
+   - La captura se envia opcionalmente al backend sin bloquear el flujo local.
+   - Al confirmar el paso, la extension adjunta tambien el recorte contextual y crea el paso remoto.
+   - Al descartar una captura ya sincronizada, intenta marcarla como descartada en el backend.
+8. La interfaz de revision permite:
    - Ver la captura en `Contexto` o `Pantalla completa`.
    - Confirmarla y crear un `ManualStep`.
    - Descartarla si no sirve.
-8. Si activas `Solo captura`:
+9. Si activas `Solo captura`:
    - La extension deja de abrir la revision automaticamente en cada captura.
    - Presionas `ALT + S` una vez y puedes seguir capturando varios elementos.
    - La extension captura primero y luego deja pasar la accion real del elemento seleccionado.
    - El selector continua activo despues de cada captura hasta que presiones `ESC`.
    - Las capturas quedan en la cola temporal para revisarlas despues.
-9. Cuando confirmas una captura:
+10. Cuando confirmas una captura:
    - Se genera una imagen contextual optimizada.
    - Se guarda un paso persistente en `storage.local`.
+   - Si el backend esta activo y hay manual remoto seleccionado, se crea tambien el paso remoto.
    - El paso queda disponible para edicion, reordenacion y exportacion.
-10. El editor de pasos permite:
+11. Si cargas un manual remoto existente:
+   - La extension descarga los pasos y sus imagenes desde el backend.
+   - El borrador local se reemplaza por esos pasos.
+   - Cada paso conserva su `remoteStepId` para sincronizar cambios de titulo y descripcion.
+   - La imagen remota se usa como contexto y original local para poder seguir editando/exportando.
+12. El editor de pasos permite:
    - Cambiar titulo.
    - Escribir descripcion.
    - Reordenar o eliminar el paso.
    - Descargar su imagen de contexto o la original.
-11. La seccion de documento permite:
+13. La seccion de documento permite:
    - Definir el titulo general del manual.
    - Definir el autor.
    - Agregar una descripcion introductoria.
@@ -184,6 +209,8 @@ La ausencia de estos archivos no bloquea la exportacion. Se utiliza Helvetica co
 
 - `browser.storage.session`: cola temporal de capturas pendientes de revision.
 - `browser.storage.local`: borrador del manual y pasos confirmados.
+- `browser.storage.local`: configuracion de conexion al backend, token de sesion y estado de sincronizacion remota.
+- Backend NestJS/PostgreSQL: sesiones, capturas y pasos remotos cuando la sincronizacion esta activada.
 
 ## 10. Limitaciones actuales
 
@@ -194,8 +221,10 @@ La ausencia de estos archivos no bloquea la exportacion. Se utiliza Helvetica co
 - Helvetica cubre el espanol habitual, pero las fuentes Noto Sans son necesarias para Unicode amplio.
 - La cola de `solo captura` sigue siendo temporal y depende del presupuesto de memoria de la extension.
 - No existe todavia una plantilla corporativa configurable.
-- No hay sincronizacion entre dispositivos.
-- No se envia informacion a un backend.
+- La autenticacion es simple con usuario/contrasena; no es CAS ni OIDC.
+- No hay pantalla administrativa completa para usuarios; el alta se hace desde el panel o por API.
+- Al cargar un manual remoto, la extension reemplaza el borrador local actual.
+- La edicion remota actual sincroniza titulo y descripcion; eliminar o reordenar pasos sigue siendo local.
 - No se guarda nada en OneDrive.
 - No se generan archivos DOCX.
 - Firefox puede mostrar advertencias de build relacionadas con distribucion, aunque el flujo local sigue funcionando.
@@ -206,7 +235,8 @@ La siguiente iteracion deberia incorporar:
 
 - Gestion de manuales por proyecto, no solo un borrador local.
 - Migrar los Blob de imagenes a IndexedDB y conservar solo referencias en el JSON.
-- Persistencia remota con backend NestJS.
+- Pantalla administrativa completa para usuarios, roles y auditoria.
+- Mejora de permisos por manual/accion si se necesita un control mas fino que workspace.
 - Almacenamiento local avanzado o en OneDrive mediante Microsoft Graph.
 - Exportacion DOCX.
 - Ajustes visuales del documento final para portadas, numeracion y plantillas.
@@ -240,5 +270,14 @@ La siguiente iteracion deberia incorporar:
 25. Probar tambien `Imprimir` como alternativa de respaldo.
 26. Descargar `Exportar JSON`.
 27. Descargar `Exportar imagenes`.
-28. Probar en una pagina con scroll.
-29. Probar despues de navegar dentro de una SPA.
+28. Activar la sincronizacion remota, completar `URL base`, usuario y contrasena.
+29. Usar `Entrar` o `Registrar`.
+30. Seleccionar o crear un workspace.
+31. Crear o seleccionar sistema, modulo, accion y manual remoto.
+32. Usar `Cargar manual remoto` y confirmar que los pasos existentes aparezcan en el editor.
+33. Editar titulo o descripcion de un paso cargado y pulsar `Guardar cambios`.
+34. Verificar en el backend que el paso remoto se actualice.
+35. Confirmar una captura nueva y verificar en el backend que se haya creado la sesion, la captura y el paso remoto.
+36. Agregar un colaborador por username y verificar que ese usuario vea el workspace al iniciar sesion.
+37. Probar en una pagina con scroll.
+38. Probar despues de navegar dentro de una SPA.
