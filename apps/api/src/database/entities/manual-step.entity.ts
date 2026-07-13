@@ -22,6 +22,9 @@ export class ManualStepEntity {
   @Column({ type: 'text', default: '' })
   description!: string;
 
+  @Column({ name: 'expected_result', type: 'text', default: '' })
+  expectedResult!: string;
+
   @Column({ type: 'varchar', length: 500 })
   selector!: string;
 

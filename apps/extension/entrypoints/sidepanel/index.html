@@ -338,6 +338,17 @@
                 ></textarea>
               </label>
 
+              <label class="field">
+                <span class="field-label">Resultado esperado</span>
+                <textarea
+                  id="step-expected-result-input"
+                  class="field-textarea"
+                  rows="3"
+                  maxlength="600"
+                  placeholder="Ejemplo: Se muestra la confirmacion y los cambios quedan guardados."
+                ></textarea>
+              </label>
+
               <div class="editor-actions">
                 <button id="save-step-button" class="primary-button" type="button">
                   Guardar cambios
@@ -356,20 +367,23 @@
                 </button>
               </div>
 
-              <div class="detail-grid compact-grid">
-                <div class="detail-card detail-card-wide">
-                  <span class="detail-label">Selector</span>
-                  <code id="step-detail-selector"></code>
+              <details class="advanced-settings step-technical-details">
+                <summary>Ver informacion tecnica</summary>
+                <div class="detail-grid compact-grid">
+                  <div class="detail-card detail-card-wide">
+                    <span class="detail-label">Selector</span>
+                    <code id="step-detail-selector"></code>
+                  </div>
+                  <div class="detail-card detail-card-wide">
+                    <span class="detail-label">Pagina</span>
+                    <p id="step-detail-page" class="detail-page"></p>
+                  </div>
+                  <div class="detail-card">
+                    <span class="detail-label">Creado</span>
+                    <p id="step-detail-created-at" class="detail-page"></p>
+                  </div>
                 </div>
-                <div class="detail-card detail-card-wide">
-                  <span class="detail-label">Pagina</span>
-                  <p id="step-detail-page" class="detail-page"></p>
-                </div>
-                <div class="detail-card">
-                  <span class="detail-label">Creado</span>
-                  <p id="step-detail-created-at" class="detail-page"></p>
-                </div>
-              </div>
+              </details>
             </div>
           </section>
         </section>

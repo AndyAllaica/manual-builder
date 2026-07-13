@@ -10,4 +10,9 @@ export class UpdateManualStepDto {
   @IsString()
   @MaxLength(5000)
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(600)
+  expectedResult?: string;
 }

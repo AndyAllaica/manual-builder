@@ -67,8 +67,8 @@ export class LocalAssetStorageService implements AssetStorageService {
   }
 
   private getMaxAssetSizeBytes(): number {
-    const maxSizeMb = Number.parseInt(this.configService.get<string>('MAX_ASSET_SIZE_MB', '12'), 10);
-    const sanitizedValue = Number.isFinite(maxSizeMb) && maxSizeMb > 0 ? maxSizeMb : 12;
+    const maxSizeMb = Number.parseInt(this.configService.get<string>('MAX_ASSET_SIZE_MB', '16'), 10);
+    const sanitizedValue = Number.isFinite(maxSizeMb) && maxSizeMb > 0 ? maxSizeMb : 16;
     return sanitizedValue * 1024 * 1024;
   }
 }

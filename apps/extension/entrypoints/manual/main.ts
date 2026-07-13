@@ -119,8 +119,8 @@ async function handlePdfExport(): Promise<void> {
     await exportManualPdf(currentDraft, {
       includeCover: true,
       drawSelectionHighlight: 'auto',
-      imageQuality: 0.84,
-      maxImageDimension: 1900,
+      imageQuality: 0.94,
+      maxImageDimension: 2560,
       fileName: currentDraft.title,
       fontUrls: {
         regular: getRuntimeUrl('/fonts/NotoSans-Regular.ttf'),
@@ -209,6 +209,14 @@ function renderSteps(steps: ManualStep[]): void {
     description.className = 'step-description';
     description.textContent = step.description || 'Sin descripcion. Agrega una instruccion breve en el editor.';
 
+    const expectedResult = document.createElement('div');
+    expectedResult.className = 'step-expected-result';
+    const expectedResultLabel = document.createElement('strong');
+    expectedResultLabel.textContent = 'Resultado esperado';
+    const expectedResultText = document.createElement('p');
+    expectedResultText.textContent = step.guide?.expectedResult || 'Verifica que la accion se complete correctamente.';
+    expectedResult.append(expectedResultLabel, expectedResultText);
+
     const metaGrid = document.createElement('dl');
     metaGrid.className = 'step-meta-grid';
 
@@ -219,7 +227,7 @@ function renderSteps(steps: ManualStep[]): void {
       createMetaRow('Capturado', formatTimestamp(step.createdAt)),
     );
 
-    content.append(description, metaGrid);
+    content.append(description, expectedResult, metaGrid);
     body.append(image, content);
     article.append(header, body);
     fragment.appendChild(article);

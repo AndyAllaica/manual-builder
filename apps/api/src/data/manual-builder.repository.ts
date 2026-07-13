@@ -658,9 +658,25 @@ export class ManualBuilderRepository {
       const selectedAssetId = requestedFraming === 'context' && capture.contextAssetId !== null
         ? capture.contextAssetId
         : capture.originalAssetId;
-      const nextOrder = (await manager.count(ManualStepEntity, {
+      const existingStepCount = await manager.count(ManualStepEntity, {
         where: { versionId: version.id },
-      })) + 1;
+      });
+
+      if (existingStepCount > 0) {
+        // Two phases avoid transient collisions with the unique (version_id, order) index.
+        await manager.createQueryBuilder()
+          .update(ManualStepEntity)
+          .set({ order: () => '"order" + 1000000' })
+          .where('version_id = :versionId', { versionId: version.id })
+          .execute();
+        await manager.createQueryBuilder()
+          .update(ManualStepEntity)
+          .set({ order: () => '"order" - 999999' })
+          .where('version_id = :versionId', { versionId: version.id })
+          .execute();
+      }
+
+      const nextOrder = 1;
 
       const step = manager.create(ManualStepEntity, {
         id: randomUUID(),
@@ -668,6 +684,7 @@ export class ManualBuilderRepository {
         order: nextOrder,
         title: normalizeOptionalText(input.title) ?? capture.title ?? `Paso ${nextOrder}`,
         description: normalizeOptionalText(input.description) ?? capture.description,
+        expectedResult: normalizeOptionalText(input.expectedResult) ?? '',
         selector: capture.selector,
         pageTitle: capture.pageTitle,
         pageUrl: capture.pageUrl,
@@ -727,6 +744,9 @@ export class ManualBuilderRepository {
 
       step.title = normalizeOptionalText(input.title) ?? step.title;
       step.description = normalizeOptionalText(input.description) ?? step.description;
+      if (input.expectedResult !== undefined) {
+        step.expectedResult = normalizeOptionalText(input.expectedResult) ?? '';
+      }
       version.updatedAt = new Date();
       manual.updatedAt = new Date();
 
@@ -1017,6 +1037,7 @@ function toManualStepRecord(entity: ManualStepEntity): ManualStepRecord {
     order: entity.order,
     title: entity.title,
     description: entity.description,
+    expectedResult: entity.expectedResult,
     selector: entity.selector,
     pageTitle: entity.pageTitle,
     pageUrl: entity.pageUrl,

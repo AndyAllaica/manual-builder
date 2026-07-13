@@ -5,7 +5,7 @@ export default defineConfig({
   manifest: {
     name: 'Manual Builder',
     description: 'Herramienta para seleccionar elementos y generar manuales de usuario.',
-    permissions: ['storage'],
+    permissions: ['storage', 'unlimitedStorage'],
     host_permissions: ['<all_urls>'],
     action: {
       default_title: 'Manual Builder',

@@ -162,13 +162,13 @@ export const PANEL_STATE_STORAGE_KEY = 'manualBuilderPanelState';
 export const MANUAL_DRAFT_STORAGE_KEY = 'manualBuilderDraft';
 export const BACKEND_SYNC_SETTINGS_STORAGE_KEY = 'manualBuilderBackendSyncSettings';
 export const MAX_CAPTURE_HISTORY = 12;
-export const MAX_CAPTURE_STORAGE_BYTES = 8_500_000;
 export const CAPTURE_IMAGE_FORMAT = 'jpeg';
-export const CAPTURE_IMAGE_QUALITY = 85;
+export const CAPTURE_IMAGE_QUALITY = 95;
 export const CONTEXT_MIN_WIDTH = 320;
 export const CONTEXT_MIN_HEIGHT = 220;
 export const MAX_STEP_TITLE_LENGTH = 80;
 export const MAX_STEP_DESCRIPTION_LENGTH = 600;
+export const MAX_STEP_EXPECTED_RESULT_LENGTH = 600;
 export const MAX_MANUAL_TITLE_LENGTH = 120;
 export const MAX_MANUAL_AUTHOR_LENGTH = 80;
 export const MAX_MANUAL_DESCRIPTION_LENGTH = 500;
@@ -344,23 +344,7 @@ export function resequenceManualSteps(steps: ManualStep[]): ManualStep[] {
 }
 
 export function trimCapturesForStorage(captures: CapturedSelectionRecord[]): CapturedSelectionRecord[] {
-  const trimmedByCount = captures.slice(0, MAX_CAPTURE_HISTORY);
-  const acceptedCaptures: CapturedSelectionRecord[] = [];
-  let usedBytes = 0;
-
-  for (const capture of trimmedByCount) {
-    const estimatedBytes = estimateDataUrlSize(capture.imageDataUrl);
-    const fitsBudget = acceptedCaptures.length === 0 || usedBytes + estimatedBytes <= MAX_CAPTURE_STORAGE_BYTES;
-
-    if (!fitsBudget) {
-      break;
-    }
-
-    acceptedCaptures.push(capture);
-    usedBytes += estimatedBytes;
-  }
-
-  return acceptedCaptures;
+  return captures.slice(0, MAX_CAPTURE_HISTORY);
 }
 
 export function buildContextRegion(selectedElement: SelectedElementData): SelectionRect {
@@ -429,6 +413,10 @@ export function sanitizeStepDescription(value: string): string {
   return clampText(value, MAX_STEP_DESCRIPTION_LENGTH) ?? '';
 }
 
+export function sanitizeStepExpectedResult(value: string): string {
+  return clampText(value, MAX_STEP_EXPECTED_RESULT_LENGTH) ?? '';
+}
+
 export function sanitizeManualTitle(value: string): string {
   return clampText(value, MAX_MANUAL_TITLE_LENGTH) ?? '';
 }
@@ -455,10 +443,6 @@ export function isClearCapturesMessage(value: unknown): value is ClearCapturesMe
 
 export function isGetCaptureModeMessage(value: unknown): value is GetCaptureModeMessage {
   return isRecord(value) && value.type === MESSAGE_TYPE_GET_CAPTURE_MODE;
-}
-
-function estimateDataUrlSize(dataUrl: string): number {
-  return Math.ceil((dataUrl.length * 3) / 4);
 }
 
 function buildFallbackStepTitle(step: ManualStep): string {
@@ -520,13 +504,27 @@ function normalizeImageRedactionRegions(value: unknown): ImageRedactionRegion[] 
 }
 
 function normalizeManualStep(step: ManualStep): ManualStep {
+  const normalizedGuide = normalizeManualStepGuide(step.guide);
+
   return {
     ...step,
+    ...(normalizedGuide === undefined ? {} : { guide: normalizedGuide }),
     remoteManualId: normalizeNullableString(step.remoteManualId),
     remoteCaptureId: normalizeNullableString(step.remoteCaptureId),
     remoteStepId: normalizeNullableString(step.remoteStepId),
     remoteSyncStatus: step.remoteSyncStatus ?? 'idle',
     remoteSyncError: normalizeNullableString(step.remoteSyncError),
+  };
+}
+
+function normalizeManualStepGuide(guide: ManualStepGuide | undefined): ManualStepGuide | undefined {
+  if (guide === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...guide,
+    expectedResult: sanitizeStepExpectedResult(guide.expectedResult ?? ''),
   };
 }
 

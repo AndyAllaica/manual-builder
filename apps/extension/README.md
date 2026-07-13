@@ -10,7 +10,7 @@ Este paquete contiene la extension **Manual Builder** en su etapa actual. Permit
 - Capturar la pestana visible.
 - Revisar siempre la captura de pantalla completa; el recorte contextual se conserva como detalle auxiliar.
 - Confirmar o descartar capturas antes de guardarlas.
-- Construir una lista de pasos del manual con titulo y descripcion editables.
+- Construir una lista de pasos con titulo, descripcion y resultado esperado editables.
 - Reordenar, eliminar y exportar pasos localmente.
 - Sincronizar las capturas confirmadas con el backend NestJS despues de iniciar sesion y seleccionar una accion.
 - Iniciar sesion con usuario/contrasena simple contra el backend.
@@ -181,7 +181,8 @@ Caracteristicas principales:
 - Paleta roja, blanca, dorada y acentos verdes para resultados.
 - Captura general sin deformacion, detalle contextual y placeholders cuando falta una imagen.
 - JPEG, PNG y WebP; WebP se convierte mediante Canvas antes de incrustarse.
-- Procesamiento secuencial con limite predeterminado de 1900 px y calidad 0.84.
+- Captura visible en JPEG con calidad 95/100, sin redimensionamiento previo.
+- Contexto WebP con calidad 0.94 y PDF con limite de 2560 px y calidad 0.94.
 - Instrucciones inferidas cuando la descripcion esta vacia o contiene texto de prueba.
 - Compatibilidad con `guide`, `annotationBaked` y alias de imagenes de JSON anteriores.
 - Progreso visible y bloqueo de exportaciones simultaneas.
@@ -199,7 +200,8 @@ La ausencia de estos archivos no bloquea la exportacion. Se utiliza Helvetica co
 
 ## 9. Persistencia usada
 
-- `browser.storage.session`: cola temporal de capturas pendientes de revision.
+- `IndexedDB`: binarios de las capturas pendientes de revision.
+- `browser.storage.session`: metadatos ligeros de la cola temporal.
 - `browser.storage.local`: borrador del manual y pasos confirmados.
 - `browser.storage.local`: configuracion de conexion al backend, token de sesion y estado de sincronizacion remota.
 - Backend NestJS/PostgreSQL: sesiones, capturas y pasos remotos cuando la sincronizacion esta activada.
@@ -209,7 +211,8 @@ La ausencia de estos archivos no bloquea la exportacion. Se utiliza Helvetica co
 - El borrador del manual sigue siendo local al navegador actual.
 - Las imagenes originales se capturan como JPEG por compatibilidad amplia con `captureVisibleTab()`.
 - La imagen contextual se intenta guardar como WebP y usa PNG como fallback si el navegador no soporta esa salida.
-- Las imagenes siguen embebidas como Data URL en `storage.local`, por lo que manuales extensos pueden alcanzar la cuota del navegador.
+- Los pasos confirmados mantienen una copia local para editar y exportar; el permiso `unlimitedStorage` evita la cuota reducida de `storage.local`.
+- El backend no recomprime los assets: OneDrive recibe el JPEG/WebP generado por la extension.
 - Helvetica cubre el espanol habitual, pero las fuentes Noto Sans son necesarias para Unicode amplio.
 - No existe todavia una plantilla corporativa configurable.
 - La autenticacion es simple con usuario/contrasena; no es CAS ni OIDC.

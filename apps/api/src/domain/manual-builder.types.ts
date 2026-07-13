@@ -129,6 +129,7 @@ export interface ManualStepRecord {
   order: number;
   title: string;
   description: string;
+  expectedResult: string;
   selector: string;
   pageTitle: string;
   pageUrl: string;
@@ -226,10 +227,12 @@ export interface AddStepFromCaptureInput {
   captureId: string;
   title?: string;
   description?: string;
+  expectedResult?: string;
   framing?: ManualImageFraming;
 }
 
 export interface UpdateManualStepInput {
   title?: string;
   description?: string;
+  expectedResult?: string;
 }

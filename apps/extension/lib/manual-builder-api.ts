@@ -125,6 +125,7 @@ export interface RemoteManualStepRecord {
   order: number;
   title: string;
   description: string;
+  expectedResult: string;
   selector: string;
   pageTitle: string;
   pageUrl: string;
@@ -211,12 +212,14 @@ export interface AddRemoteStepFromCaptureInput {
   captureId: string;
   title?: string;
   description?: string;
+  expectedResult?: string;
   framing?: RemoteManualImageFraming;
 }
 
 export interface UpdateRemoteManualStepInput {
   title?: string;
   description?: string;
+  expectedResult?: string;
 }
 
 export interface RemoteAssetRecord {

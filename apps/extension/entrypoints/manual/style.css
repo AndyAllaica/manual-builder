@@ -297,6 +297,25 @@ body {
   line-height: 1.65;
 }
 
+.step-expected-result {
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  border-radius: 16px;
+  background: rgba(15, 118, 110, 0.07);
+}
+
+.step-expected-result strong {
+  color: #0f766e;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.step-expected-result p {
+  margin: 7px 0 0;
+  line-height: 1.55;
+}
+
 .step-meta-grid {
   display: grid;
   grid-template-columns: 1fr;

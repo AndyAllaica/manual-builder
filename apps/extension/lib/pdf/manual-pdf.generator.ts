@@ -48,8 +48,8 @@ interface TextBoxOptions {
   lineHeightRatio?: number;
 }
 
-const DEFAULT_IMAGE_QUALITY = 0.84;
-const DEFAULT_MAX_IMAGE_DIMENSION = 1900;
+const DEFAULT_IMAGE_QUALITY = 0.94;
+const DEFAULT_MAX_IMAGE_DIMENSION = 2560;
 
 export async function generateManualPdf(
   manualInput: ManualExport,

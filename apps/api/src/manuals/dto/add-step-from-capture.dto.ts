@@ -16,6 +16,11 @@ export class AddStepFromCaptureDto {
   description?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(600)
+  expectedResult?: string;
+
+  @IsOptional()
   @IsEnum(['context', 'full'])
   framing?: ManualImageFraming;
 }

@@ -14,6 +14,7 @@ import {
   sanitizeManualDescription,
   sanitizeManualTitle,
   sanitizeStepDescription,
+  sanitizeStepExpectedResult,
   sanitizeStepTitle,
   type BackendSyncSettings,
   type CapturePanelState,
@@ -86,6 +87,8 @@ interface ExportedManualDocument {
 
 const MANUAL_PAGE_PATH = '/manual.html' as const;
 const DEFAULT_REMOTE_FRAMING = 'full' as const;
+const STORED_IMAGE_QUALITY = 0.95;
+const CONTEXT_IMAGE_QUALITY = 0.94;
 
 let currentState: CapturePanelState = createEmptyPanelState();
 let currentDraft: ManualDraft = createEmptyManualDraft();
@@ -103,6 +106,7 @@ let redactionDraftCaptureId: string | null = null;
 let stepFormStepId: string | null = null;
 let stepFormTitle = '';
 let stepFormDescription = '';
+let stepFormExpectedResult = '';
 let stepFormDirty = false;
 let manualTitleDraft = '';
 let manualAuthorDraft = '';
@@ -198,6 +202,7 @@ const stepHeading = queryElement<HTMLHeadingElement>('step-heading');
 const stepMeta = queryElement<HTMLParagraphElement>('step-meta');
 const stepTitleInput = queryElement<HTMLInputElement>('step-title-input');
 const stepDescriptionInput = queryElement<HTMLTextAreaElement>('step-description-input');
+const stepExpectedResultInput = queryElement<HTMLTextAreaElement>('step-expected-result-input');
 const saveStepButton = queryElement<HTMLButtonElement>('save-step-button');
 const moveStepUpButton = queryElement<HTMLButtonElement>('move-step-up-button');
 const moveStepDownButton = queryElement<HTMLButtonElement>('move-step-down-button');
@@ -453,6 +458,12 @@ async function initializeSidePanel(): Promise<void> {
 
   stepDescriptionInput.addEventListener('input', () => {
     stepFormDescription = stepDescriptionInput.value;
+    stepFormDirty = true;
+    updateStepActionState(getSelectedStep());
+  });
+
+  stepExpectedResultInput.addEventListener('input', () => {
+    stepFormExpectedResult = stepExpectedResultInput.value;
     stepFormDirty = true;
     updateStepActionState(getSelectedStep());
   });
@@ -917,6 +928,7 @@ function renderStepEditor(selectedStep: ManualStep | null): void {
     `Paso ${selectedStep.order} | ${selectedStep.pageTitle || 'Pagina sin titulo'} | ${formatRemoteSyncStatus(selectedStep.remoteSyncStatus)}${selectedStep.remoteSyncError ? ` | ${selectedStep.remoteSyncError}` : ''}`;
   stepTitleInput.value = stepFormTitle;
   stepDescriptionInput.value = stepFormDescription;
+  stepExpectedResultInput.value = stepFormExpectedResult;
   stepDetailSelector.textContent = selectedStep.selector;
   stepDetailPage.textContent = selectedStep.url;
   stepDetailCreatedAt.textContent = formatTimestamp(selectedStep.createdAt);
@@ -1249,7 +1261,7 @@ async function handleConfirmSelectedCapture(): Promise<void> {
     redactionRegions: [],
   };
   const contextAsset = await createContextImageAsset(protectedCapture);
-  const nextOrder = manualDraft.steps.length + 1;
+  const nextOrder = 1;
   const localStep = createManualStep({
     capture: protectedCapture,
     order: nextOrder,
@@ -1266,7 +1278,7 @@ async function handleConfirmSelectedCapture(): Promise<void> {
 
   await saveManualDraft({
     ...manualDraft,
-    steps: [...manualDraft.steps, nextStep],
+    steps: [nextStep, ...manualDraft.steps],
   });
 
   await savePanelState(removeCaptureFromState(panelState, capture.id));
@@ -1300,9 +1312,10 @@ async function handleSaveSelectedStep(): Promise<void> {
 
   const title = sanitizeStepTitle(stepFormTitle) || 'Elemento seleccionado';
   const description = sanitizeStepDescription(stepFormDescription);
+  const expectedResult = sanitizeStepExpectedResult(stepFormExpectedResult);
 
   stepFormDirty = false;
-  await persistStepEdits(manualDraft, selectedStep.id, title, description);
+  await persistStepEdits(manualDraft, selectedStep.id, title, description, expectedResult);
   await refreshState();
 }
 
@@ -2085,6 +2098,9 @@ async function buildManualStepFromRemoteStep(
     order,
     title: sanitizeStepTitle(remoteStep.title) || `Paso ${order}`,
     description: sanitizeStepDescription(remoteStep.description),
+    guide: {
+      expectedResult: sanitizeStepExpectedResult(remoteStep.expectedResult ?? ''),
+    },
     selector: remoteStep.selector,
     url: remoteStep.pageUrl,
     pageTitle: remoteStep.pageTitle,
@@ -2331,6 +2347,7 @@ async function syncConfirmedStepToBackend(
         captureId: remoteCaptureId,
         title: step.title,
         description: step.description,
+        expectedResult: step.guide?.expectedResult ?? '',
         framing: DEFAULT_REMOTE_FRAMING,
       });
       remoteStepId = response.step.id;
@@ -2409,6 +2426,7 @@ async function syncEditedStepToBackend(step: ManualStep): Promise<ManualStep> {
     await client.updateManualStep(step.remoteStepId, {
       title: step.title,
       description: step.description,
+      expectedResult: step.guide?.expectedResult ?? '',
     });
 
     await saveBackendSyncSettings({
@@ -2470,11 +2488,11 @@ async function createRedactedOriginalImageAsset(
   );
 
   if (format === 'jpeg') {
-    return { dataUrl: detachedCanvas.toDataURL('image/jpeg', 0.9), format };
+    return { dataUrl: detachedCanvas.toDataURL('image/jpeg', STORED_IMAGE_QUALITY), format };
   }
 
   if (format === 'webp') {
-    const dataUrl = detachedCanvas.toDataURL('image/webp', 0.9);
+    const dataUrl = detachedCanvas.toDataURL('image/webp', STORED_IMAGE_QUALITY);
     if (dataUrl.startsWith('data:image/webp')) {
       return { dataUrl, format };
     }
@@ -2490,7 +2508,7 @@ async function createContextImageAsset(
   const detachedCanvas = document.createElement('canvas');
   drawCapturePreviewToCanvas(detachedCanvas, image, capture, 'context');
 
-  const preferredDataUrl = detachedCanvas.toDataURL('image/webp', 0.84);
+  const preferredDataUrl = detachedCanvas.toDataURL('image/webp', CONTEXT_IMAGE_QUALITY);
   if (preferredDataUrl.startsWith('data:image/webp')) {
     return {
       dataUrl: preferredDataUrl,
@@ -2684,6 +2702,7 @@ async function persistPendingEditsIfNeeded(): Promise<void> {
       selectedStepId,
       sanitizeStepTitle(stepFormTitle) || 'Elemento seleccionado',
       sanitizeStepDescription(stepFormDescription),
+      sanitizeStepExpectedResult(stepFormExpectedResult),
     );
     stepFormDirty = false;
   }
@@ -2708,6 +2727,7 @@ async function persistStepEdits(
   stepId: string,
   title: string,
   description: string,
+  expectedResult: string,
 ): Promise<ManualDraft> {
   const editedAt = new Date().toISOString();
   const locallyUpdatedDraft: ManualDraft = {
@@ -2718,6 +2738,10 @@ async function persistStepEdits(
             ...step,
             title,
             description,
+            guide: {
+              ...step.guide,
+              expectedResult,
+            },
             updatedAt: editedAt,
           }
         : step
@@ -3005,6 +3029,7 @@ function syncStepFormState(selectedStep: ManualStep | null): void {
     stepFormStepId = null;
     stepFormTitle = '';
     stepFormDescription = '';
+    stepFormExpectedResult = '';
     stepFormDirty = false;
     return;
   }
@@ -3016,6 +3041,7 @@ function syncStepFormState(selectedStep: ManualStep | null): void {
   stepFormStepId = selectedStep.id;
   stepFormTitle = selectedStep.title;
   stepFormDescription = selectedStep.description;
+  stepFormExpectedResult = selectedStep.guide?.expectedResult ?? '';
   stepFormDirty = false;
 }
 

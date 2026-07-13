@@ -162,6 +162,7 @@ Para una base que ya existe y no usa `DB_SYNCHRONIZE=true`, aplica tambien:
 
 ```text
 apps/api/database/2026-07-12-auth-workspaces.sql
+apps/api/database/add-expected-result.sql
 ```
 
 Si dejas `DB_SYNCHRONIZE=true`, TypeORM crea las tablas `users` y `workspace_members` al levantar el backend. En bases institucionales conviene usar el SQL y luego mantener `DB_SYNCHRONIZE=false`.
