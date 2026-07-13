@@ -26,6 +26,7 @@ export interface SelectedElementData {
 }
 
 export type BackendSyncStatus = 'idle' | 'synced' | 'error';
+export type BackendStorageProvider = 'local' | 'onedrive-business';
 
 export interface BackendSyncSettings {
   enabled: boolean;
@@ -43,6 +44,7 @@ export interface BackendSyncSettings {
   sessionId: string | null;
   sessionActionId: string | null;
   workspaceName: string | null;
+  storageProvider: BackendStorageProvider | null;
   lastValidatedAt: string | null;
   lastError: string | null;
 }
@@ -193,6 +195,7 @@ export function createEmptyBackendSyncSettings(): BackendSyncSettings {
     sessionId: null,
     sessionActionId: null,
     workspaceName: null,
+    storageProvider: null,
     lastValidatedAt: null,
     lastError: null,
   };
@@ -264,8 +267,6 @@ export function createManualStep(input: {
 }
 
 export function normalizePanelState(state: CapturePanelState): CapturePanelState {
-  const defaultState = createEmptyPanelState();
-
   return {
     status: state.status,
     captures: trimCapturesForStorage(state.captures.map(normalizeCapturedSelectionRecord)),
@@ -274,7 +275,7 @@ export function normalizePanelState(state: CapturePanelState): CapturePanelState
     lastUpdatedAt: state.lastUpdatedAt,
     reviewSurface: state.reviewSurface,
     reviewTabId: state.reviewTabId,
-    captureMode: state.captureMode ?? defaultState.captureMode,
+    captureMode: 'review',
   };
 }
 
@@ -297,11 +298,12 @@ export function normalizeBackendSyncSettings(
   settings: Partial<BackendSyncSettings>,
 ): BackendSyncSettings {
   const defaults = createEmptyBackendSyncSettings();
+  const authToken = normalizeNullableString(settings.authToken);
 
   return {
-    enabled: settings.enabled ?? defaults.enabled,
+    enabled: authToken !== null,
     apiBaseUrl: normalizeNullableString(settings.apiBaseUrl) ?? defaults.apiBaseUrl,
-    authToken: normalizeNullableString(settings.authToken),
+    authToken,
     userId: normalizeNullableString(settings.userId),
     username: normalizeNullableString(settings.username) ?? '',
     displayName: normalizeNullableString(settings.displayName) ?? '',
@@ -314,9 +316,14 @@ export function normalizeBackendSyncSettings(
     sessionId: normalizeNullableString(settings.sessionId),
     sessionActionId: normalizeNullableString(settings.sessionActionId),
     workspaceName: normalizeNullableString(settings.workspaceName),
+    storageProvider: normalizeBackendStorageProvider(settings.storageProvider),
     lastValidatedAt: normalizeNullableString(settings.lastValidatedAt),
     lastError: normalizeNullableString(settings.lastError),
   };
+}
+
+function normalizeBackendStorageProvider(value: unknown): BackendStorageProvider | null {
+  return value === 'local' || value === 'onedrive-business' ? value : null;
 }
 
 export function resequenceManualSteps(steps: ManualStep[]): ManualStep[] {

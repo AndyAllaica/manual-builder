@@ -59,7 +59,9 @@ export class OneDriveFileService {
       headers: this.buildHeaders(token, formData.getHeaders() as Record<string, string>),
       data: formData,
     });
+    assertOperationSucceeded(payload, 'subir el archivo');
     const metadata = this.extractFileMetadata(payload);
+    this.logger.log(`Asset almacenado en OneDrive: ${metadata.storagePath ?? input.storagePath}`);
 
     return {
       storagePath: metadata.storagePath ?? input.storagePath,
@@ -446,6 +448,25 @@ function stringifyPayload(payload: unknown): string {
   } catch {
     return 'Respuesta no serializable.';
   }
+}
+
+function assertOperationSucceeded(payload: unknown, operation: string): void {
+  const source = unwrapPayload(payload);
+  if (!isRecord(source)) {
+    return;
+  }
+
+  const failed = source.success === false
+    || source.exito === false
+    || source.ok === false
+    || source.success === 'false';
+  if (!failed) {
+    return;
+  }
+
+  const detail = firstText(source.message, source.mensaje, source.error, source.detalle)
+    ?? 'El servicio remoto rechazo la operacion.';
+  throw new BadGatewayException(`No se pudo ${operation}: ${detail}`);
 }
 
 function getErrorMessage(error: unknown): string {

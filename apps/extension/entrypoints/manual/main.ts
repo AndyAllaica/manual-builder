@@ -199,7 +199,7 @@ function renderSteps(steps: ManualStep[]): void {
 
     const image = document.createElement('img');
     image.className = 'step-image';
-    image.src = step.imageContextDataUrl;
+    image.src = step.imageOriginalDataUrl;
     image.alt = `Imagen del ${step.title}`;
 
     const content = document.createElement('div');

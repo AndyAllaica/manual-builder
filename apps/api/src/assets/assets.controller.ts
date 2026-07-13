@@ -1,6 +1,7 @@
-import { BadGatewayException, BadRequestException, Controller, Get, Query, Res } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Controller, Get, Inject, Query, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { type Response } from 'express';
+import { ASSET_STORAGE_SERVICE, type AssetStorageService } from '../storage/asset-storage.types';
 import { OneDriveFileService } from '../storage/onedrive-file.service';
 
 @Controller({ path: 'assets', version: '1' })
@@ -8,6 +9,8 @@ export class AssetsController {
   constructor(
     private readonly oneDriveFileService: OneDriveFileService,
     private readonly configService: ConfigService,
+    @Inject(ASSET_STORAGE_SERVICE)
+    private readonly assetStorageService: AssetStorageService,
   ) {}
 
   @Get('storage/status')
@@ -16,7 +19,8 @@ export class AssetsController {
     const shouldCheckToken = checkToken === 'true' || checkToken === '1';
 
     return {
-      provider,
+      configuredProvider: provider,
+      activeProvider: this.assetStorageService.getProvider(),
       oneDrive: {
         selected: provider === 'onedrive-business',
         rootPath: this.configService.get<string>('ONEDRIVE_ROOT_PATH', 'MANUAL_BUILDER'),
@@ -38,7 +42,8 @@ export class AssetsController {
     @Query('path') path: string | undefined,
     @Res() response: Response,
   ): Promise<void> {
-    const storagePath = sanitizeStoragePath(path);
+    const rootPath = this.configService.get<string>('ONEDRIVE_ROOT_PATH', 'MANUAL_BUILDER');
+    const storagePath = sanitizeStoragePath(path, rootPath);
     const metadata = await this.oneDriveFileService.resolveFileMetadata(storagePath);
 
     if (metadata.publicUrl === null) {
@@ -49,7 +54,7 @@ export class AssetsController {
   }
 }
 
-function sanitizeStoragePath(path: string | undefined): string {
+function sanitizeStoragePath(path: string | undefined, rootPath: string): string {
   if (path === undefined || path.trim().length === 0) {
     throw new BadRequestException('Debes indicar la ruta del asset.');
   }
@@ -69,7 +74,19 @@ function sanitizeStoragePath(path: string | undefined): string {
     throw new BadRequestException('La ruta del asset no es valida.');
   }
 
+  const capturesRoot = `${normalizePath(rootPath)}/captures/`.toLowerCase();
+  if (!normalizedPath.toLowerCase().startsWith(capturesRoot)) {
+    throw new BadRequestException('La ruta solicitada no pertenece a las capturas de Manual Builder.');
+  }
+
   return normalizedPath;
+}
+
+function normalizePath(path: string): string {
+  return path
+    .replace(/\\/g, '/')
+    .replace(/\/{2,}/g, '/')
+    .replace(/^\/+|\/+$/g, '');
 }
 
 function hasConfig(configService: ConfigService, key: string): boolean {

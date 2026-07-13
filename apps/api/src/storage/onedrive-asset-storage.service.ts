@@ -13,6 +13,10 @@ export class OneDriveAssetStorageService implements AssetStorageService {
     private readonly oneDriveFileService: OneDriveFileService,
   ) {}
 
+  getProvider() {
+    return 'onedrive-business' as const;
+  }
+
   async saveCaptureAsset(input: SaveCaptureAssetInput): Promise<StoredAssetMetadata> {
     const parsedDataUrl = parseImageDataUrl(input.dataUrl);
     const maxSizeBytes = this.getMaxAssetSizeBytes();
@@ -34,7 +38,7 @@ export class OneDriveAssetStorageService implements AssetStorageService {
     });
     const finalStoragePath = uploadedFile.storagePath || storagePath;
     const finalFileName = uploadedFile.fileName ?? fileName;
-    const finalPublicUrl = uploadedFile.publicUrl ?? this.buildPublicAssetUrl(finalStoragePath);
+    const finalPublicUrl = this.buildPublicAssetUrl(finalStoragePath);
 
     return {
       provider: 'onedrive-business',

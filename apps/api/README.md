@@ -89,7 +89,7 @@ Cuando se usa OneDrive, el API guarda en PostgreSQL:
 
 - `file_name`: nombre final del archivo.
 - `storage_path`: ruta estable dentro de OneDrive.
-- `public_url`: URL devuelta por el servicio institucional. Si el servicio no devuelve URL, se guarda una URL estable del backend.
+- `public_url`: URL estable del backend; no se persiste el enlace temporal firmado que devuelve OneDrive.
 
 Fallback de URL estable del backend:
 
@@ -97,12 +97,25 @@ Fallback de URL estable del backend:
 http://localhost:3001/api/v1/assets/onedrive/content?path=...
 ```
 
-Ese endpoint resuelve la URL real de descarga con `OBTENER_ARCHIVO` u `OBTENER_LIST_ARCHIVO` y redirige al archivo.
+Ese endpoint admite solamente rutas bajo `{ONEDRIVE_ROOT_PATH}/captures`, resuelve una URL de descarga vigente con `OBTENER_ARCHIVO` u `OBTENER_LIST_ARCHIVO` y redirige al archivo.
 
 Para verificar que el backend arranco con el proveedor correcto:
 
 ```text
 GET http://localhost:3001/api/v1/assets/storage/status
+```
+
+La respuesta incluye `configuredProvider` desde `.env` y `activeProvider` desde el servicio realmente inyectado. Para que las capturas nuevas suban a OneDrive, ambos deben ser `onedrive-business`.
+
+El token valido no demuestra por si solo que la extension haya enviado una captura. La subida ocurre al recibir `POST /api/v1/capture-sessions/:sessionId/captures`; al confirmar un paso puede recibirse ademas el contexto mediante `PATCH /api/v1/capture-sessions/captures/:captureId`.
+
+Para comprobar las ultimas subidas:
+
+```sql
+SELECT created_at, provider, kind, file_name, storage_path, public_url
+FROM assets
+ORDER BY created_at DESC
+LIMIT 20;
 ```
 
 Para forzar una prueba de token sin imprimir el token:

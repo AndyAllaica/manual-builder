@@ -168,9 +168,7 @@ async function processSelection(
     reviewTabId: initialReviewTarget.reviewTabId,
   });
 
-  const activeReviewTarget = keepSelecting
-    ? initialReviewTarget
-    : await openReviewSurfaceForSelection(sender, initialReviewTarget);
+  let activeReviewTarget = initialReviewTarget;
 
   try {
     const imageDataUrl = await captureVisibleTab(sender);
@@ -180,6 +178,9 @@ async function processSelection(
       sender.tab?.id ?? null,
       sender.tab?.windowId ?? null,
     );
+    activeReviewTarget = keepSelecting
+      ? initialReviewTarget
+      : await openReviewSurfaceForSelection(sender, initialReviewTarget);
     const captureRecord = await syncCaptureToBackendIfEnabled(localCaptureRecord);
     const nextCaptures = trimCapturesForStorage([captureRecord, ...currentState.captures]);
 
@@ -254,6 +255,11 @@ async function syncCaptureToBackendIfEnabled(
       apiBaseUrl: client.baseUrl,
       sessionId,
       sessionActionId: settings.actionId,
+      storageProvider: response.originalAsset.provider === 'local'
+        ? 'local'
+        : response.originalAsset.provider === 'onedrive-business'
+          ? 'onedrive-business'
+          : settings.storageProvider,
       lastError: null,
     });
 

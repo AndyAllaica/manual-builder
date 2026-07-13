@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { type AuthenticatedUser } from '../auth/auth.types';
 import { ManualBuilderRepository } from '../data/manual-builder.repository';
 import {
@@ -14,6 +14,8 @@ import {
 
 @Injectable()
 export class CaptureSessionsService {
+  private readonly logger = new Logger(CaptureSessionsService.name);
+
   constructor(
     private readonly repository: ManualBuilderRepository,
     @Inject(ASSET_STORAGE_SERVICE)
@@ -77,6 +79,7 @@ export class CaptureSessionsService {
       await this.repository.getWorkspaceIdByCaptureSessionId(sessionId),
     );
 
+    this.logger.log(`Recibida captura remota. sessionId=${sessionId}, storage=${this.assetStorageService.getProvider()}`);
     const storedOriginalAsset = await this.assetStorageService.saveCaptureAsset({
       sessionId,
       kind: 'original',
@@ -87,6 +90,7 @@ export class CaptureSessionsService {
 
     try {
       if (input.contextImageDataUrl !== undefined && input.contextImageDataUrl !== null) {
+        this.logger.log(`Guardando contexto de captura remota. sessionId=${sessionId}, storage=${this.assetStorageService.getProvider()}`);
         storedContextAsset = await this.assetStorageService.saveCaptureAsset({
           sessionId,
           kind: 'context',
@@ -140,6 +144,7 @@ export class CaptureSessionsService {
 
     try {
       if (input.contextImageDataUrl !== null && input.contextImageDataUrl !== undefined) {
+        this.logger.log(`Recibida revision de captura con contexto. captureId=${captureId}, storage=${this.assetStorageService.getProvider()}`);
         storedContextAsset = await this.assetStorageService.saveCaptureAsset({
           sessionId: existingCapture.sessionId,
           kind: 'context',
@@ -156,7 +161,13 @@ export class CaptureSessionsService {
       });
 
       if (storedContextAsset !== null && previousContextAsset !== null) {
-        await this.assetStorageService.deleteStoredAsset(previousContextAsset.storagePath);
+        if (previousContextAsset.provider === this.assetStorageService.getProvider()) {
+          await this.assetStorageService.deleteStoredAsset(previousContextAsset.storagePath);
+        } else {
+          this.logger.warn(
+            `No se elimino el contexto anterior ${previousContextAsset.id}: pertenece al proveedor ${previousContextAsset.provider}.`,
+          );
+        }
       }
 
       return {

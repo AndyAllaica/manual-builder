@@ -18,6 +18,7 @@ export interface StoredAssetMetadata {
 }
 
 export interface AssetStorageService {
+  getProvider(): AssetStorageProvider;
   saveCaptureAsset(input: SaveCaptureAssetInput): Promise<StoredAssetMetadata>;
   deleteStoredAsset(storagePath: string): Promise<void>;
 }

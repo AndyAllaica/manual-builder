@@ -4,6 +4,11 @@ export type RemoteManualImageFraming = 'context' | 'full';
 export type RemoteCaptureStatus = 'pending' | 'approved' | 'discarded';
 export type RemoteWorkspaceMemberRole = 'owner' | 'admin' | 'editor' | 'viewer';
 
+export interface RemoteStorageStatus {
+  configuredProvider: string;
+  activeProvider: 'local' | 'onedrive-business';
+}
+
 export interface RemoteAuthUser {
   id: string;
   username: string;
@@ -295,6 +300,7 @@ export interface ManualBuilderApiClient {
   login(input: { username: string; password: string }): Promise<RemoteAuthResponse>;
   register(input: { username: string; password: string; displayName?: string }): Promise<RemoteAuthResponse>;
   getCurrentUser(): Promise<{ user: RemoteAuthUser }>;
+  getStorageStatus(): Promise<RemoteStorageStatus>;
   listWorkspaces(): Promise<RemoteWorkspaceRecord[]>;
   createWorkspace(input: { name: string; description?: string }): Promise<RemoteWorkspaceRecord>;
   listWorkspaceMembers(workspaceId: string): Promise<RemoteWorkspaceMemberRecord[]>;
@@ -344,6 +350,7 @@ export function createManualBuilderApiClient(apiBaseUrl: string, authToken?: str
         body: JSON.stringify(input),
       }),
     getCurrentUser: () => requestJson<{ user: RemoteAuthUser }>(baseUrl, '/auth/me', undefined, authToken),
+    getStorageStatus: () => requestJson<RemoteStorageStatus>(baseUrl, '/assets/storage/status'),
     listWorkspaces: () => requestJson<RemoteWorkspaceRecord[]>(baseUrl, '/workspaces', undefined, authToken),
     createWorkspace: (input) =>
       requestJson<RemoteWorkspaceRecord>(baseUrl, '/workspaces', {

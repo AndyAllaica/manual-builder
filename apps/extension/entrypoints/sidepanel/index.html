@@ -32,36 +32,18 @@
           </p>
         </section>
 
-        <section class="capture-mode-section">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Flujo</p>
-              <h2 id="capture-mode-title">Revision paso a paso</h2>
-            </div>
-            <button id="toggle-capture-mode-button" class="secondary-button" type="button">
-              Activar solo captura
-            </button>
-          </div>
-          <p id="capture-mode-text" class="summary-text">
-            El modo actual abre la revision al capturar y te deja decidir despues que guardar como paso.
-          </p>
-        </section>
-
         <section class="backend-section">
           <div class="section-header">
             <div>
-              <p class="section-kicker">Backend</p>
-              <h2>Sincronizacion remota</h2>
+              <p class="section-kicker">Cuenta</p>
+              <h2>Guardado remoto</h2>
             </div>
-            <label class="field-checkbox" for="backend-sync-enabled-input">
-              <input id="backend-sync-enabled-input" type="checkbox" />
-              <span>Activar</span>
-            </label>
+            <span id="backend-connection-badge" class="connection-badge">Sin conectar</span>
           </div>
 
           <div class="document-meta backend-meta">
             <label class="field field-wide">
-              <span class="field-label">URL base del API</span>
+              <span class="field-label">Servidor</span>
               <input
                 id="backend-api-url-input"
                 class="field-input"
@@ -70,13 +52,15 @@
               />
             </label>
             <label class="field">
-              <span class="field-label">Usuario login</span>
+              <span class="field-label">Usuario</span>
               <input
                 id="backend-username-input"
                 class="field-input"
                 type="text"
                 maxlength="80"
                 placeholder="anderson"
+                autocomplete="username"
+                spellcheck="false"
               />
             </label>
             <label class="field">
@@ -85,20 +69,25 @@
                 id="backend-password-input"
                 class="field-input"
                 type="password"
+                minlength="6"
                 maxlength="120"
-                placeholder="Minimo 6 caracteres"
+                placeholder="Letras y numeros, minimo 6 caracteres"
+                autocomplete="current-password"
+                spellcheck="false"
               />
             </label>
-            <label class="field">
-              <span class="field-label">Responsable</span>
-              <input
-                id="backend-started-by-input"
-                class="field-input"
-                type="text"
-                maxlength="120"
-                placeholder="usuario.institucional"
-              />
-            </label>
+          </div>
+
+          <div class="export-actions login-actions">
+            <button id="backend-login-button" class="primary-button" type="button">
+              Entrar
+            </button>
+            <button id="backend-register-button" class="secondary-button" type="button">
+              Crear cuenta
+            </button>
+          </div>
+
+          <div class="document-meta backend-meta">
             <label class="field">
               <span class="field-label">Workspace</span>
               <select id="backend-workspace-select" class="field-input"></select>
@@ -121,72 +110,63 @@
             </label>
           </div>
 
-          <div class="catalog-create-grid">
-            <label class="field">
-              <span class="field-label">Nuevo workspace</span>
-              <input id="new-workspace-name-input" class="field-input" type="text" maxlength="120" />
-            </label>
-            <button id="create-workspace-button" class="secondary-button catalog-create-button" type="button">
-              Crear workspace
-            </button>
-
-            <label class="field">
-              <span class="field-label">Nuevo sistema</span>
-              <input id="new-system-name-input" class="field-input" type="text" maxlength="120" />
-            </label>
-            <button id="create-system-button" class="secondary-button catalog-create-button" type="button">
-              Crear sistema
-            </button>
-
-            <label class="field">
-              <span class="field-label">Nuevo modulo</span>
-              <input id="new-module-name-input" class="field-input" type="text" maxlength="120" />
-            </label>
-            <button id="create-module-button" class="secondary-button catalog-create-button" type="button">
-              Crear modulo
-            </button>
-
-            <label class="field">
-              <span class="field-label">Nueva accion</span>
-              <input id="new-action-name-input" class="field-input" type="text" maxlength="120" />
-            </label>
-            <button id="create-action-button" class="secondary-button catalog-create-button" type="button">
-              Crear accion
-            </button>
-
-            <label class="field">
-              <span class="field-label">Agregar colaborador</span>
-              <input id="collaborator-username-input" class="field-input" type="text" maxlength="80" />
-            </label>
-            <div class="collaborator-actions">
-              <select id="collaborator-role-select" class="field-input">
-                <option value="editor">Editor</option>
-                <option value="admin">Admin</option>
-                <option value="viewer">Solo lectura</option>
-              </select>
-              <button id="add-collaborator-button" class="secondary-button catalog-create-button" type="button">
-                Agregar
+          <details class="advanced-settings">
+            <summary>Administrar catalogo y colaboradores</summary>
+            <div class="catalog-create-grid">
+              <label class="field">
+                <span class="field-label">Nuevo workspace</span>
+                <input id="new-workspace-name-input" class="field-input" type="text" maxlength="120" />
+              </label>
+              <button id="create-workspace-button" class="secondary-button catalog-create-button" type="button">
+                Crear workspace
               </button>
+
+              <label class="field">
+                <span class="field-label">Nuevo sistema</span>
+                <input id="new-system-name-input" class="field-input" type="text" maxlength="120" />
+              </label>
+              <button id="create-system-button" class="secondary-button catalog-create-button" type="button">
+                Crear sistema
+              </button>
+
+              <label class="field">
+                <span class="field-label">Nuevo modulo</span>
+                <input id="new-module-name-input" class="field-input" type="text" maxlength="120" />
+              </label>
+              <button id="create-module-button" class="secondary-button catalog-create-button" type="button">
+                Crear modulo
+              </button>
+
+              <label class="field">
+                <span class="field-label">Nueva accion</span>
+                <input id="new-action-name-input" class="field-input" type="text" maxlength="120" />
+              </label>
+              <button id="create-action-button" class="secondary-button catalog-create-button" type="button">
+                Crear accion
+              </button>
+
+              <label class="field">
+                <span class="field-label">Agregar colaborador</span>
+                <input id="collaborator-username-input" class="field-input" type="text" maxlength="80" />
+              </label>
+              <div class="collaborator-actions">
+                <select id="collaborator-role-select" class="field-input">
+                  <option value="editor">Editor</option>
+                  <option value="admin">Admin</option>
+                  <option value="viewer">Solo lectura</option>
+                </select>
+                <button id="add-collaborator-button" class="secondary-button catalog-create-button" type="button">
+                  Agregar
+                </button>
+              </div>
             </div>
-          </div>
+          </details>
 
           <p id="backend-sync-status-text" class="summary-text">
-            La sincronizacion remota esta desactivada. El flujo actual sigue siendo local.
+            Inicia sesion y selecciona una accion. La sincronizacion se guardara automaticamente.
           </p>
 
           <div class="export-actions">
-            <button id="backend-login-button" class="primary-button" type="button">
-              Entrar
-            </button>
-            <button id="backend-register-button" class="secondary-button" type="button">
-              Registrar
-            </button>
-            <button id="save-backend-settings-button" class="secondary-button" type="button">
-              Guardar conexion
-            </button>
-            <button id="validate-backend-button" class="ghost-button" type="button">
-              Cargar catalogo
-            </button>
             <button id="create-remote-manual-button" class="primary-button" type="button">
               Crear manual remoto
             </button>
@@ -234,24 +214,6 @@
                   <h2 id="capture-heading">Ultima captura</h2>
                 </div>
 
-                <div class="preview-modes" role="toolbar" aria-label="Modo de vista" hidden>
-                  <button
-                    id="context-mode-button"
-                    class="mode-button is-active"
-                    type="button"
-                    aria-pressed="true"
-                  >
-                    Contexto
-                  </button>
-                  <button
-                    id="full-mode-button"
-                    class="mode-button"
-                    type="button"
-                    aria-pressed="false"
-                  >
-                    Pantalla completa
-                  </button>
-                </div>
               </div>
 
               <p id="capture-time" class="capture-time"></p>
@@ -272,13 +234,8 @@
               </div>
             </div>
 
-            <div class="capture-details">
-              <div class="section-header">
-                <div>
-                  <p class="section-kicker">Detalle</p>
-                  <h2>Seleccion actual</h2>
-                </div>
-              </div>
+            <details class="capture-details advanced-settings">
+              <summary>Detalles tecnicos de la seleccion</summary>
 
               <div class="detail-grid">
                 <div class="detail-card">
@@ -306,10 +263,6 @@
                   <strong id="detail-rect"></strong>
                 </div>
                 <div class="detail-card">
-                  <span class="detail-label">Contexto</span>
-                  <strong id="detail-context"></strong>
-                </div>
-                <div class="detail-card">
                   <span class="detail-label">Viewport</span>
                   <strong id="detail-viewport"></strong>
                 </div>
@@ -318,7 +271,7 @@
                   <strong id="detail-surface"></strong>
                 </div>
               </div>
-            </div>
+            </details>
           </section>
 
           <div id="history-list" class="history-list"></div>
@@ -374,11 +327,8 @@
                 <button id="move-step-down-button" class="secondary-button" type="button">
                   Bajar
                 </button>
-                <button id="download-context-button" class="ghost-button" type="button">
-                  Descargar contexto
-                </button>
                 <button id="download-original-button" class="ghost-button" type="button">
-                  Descargar original
+                  Descargar captura
                 </button>
                 <button id="delete-step-button" class="danger-button" type="button">
                   Eliminar paso
@@ -445,12 +395,9 @@
             </button>
           </div>
           <p class="summary-text export-copy">
-            Exporta el borrador actual en JSON y descarga las imagenes localmente sin backend.
+            Genera el PDF con la captura completa y conserva el detalle resaltado como apoyo visual.
           </p>
           <div class="export-actions">
-            <button id="open-manual-view-button" class="ghost-button" type="button">
-              Abrir vista final
-            </button>
             <button id="open-print-view-button" class="ghost-button" type="button">
               Exportar PDF
             </button>

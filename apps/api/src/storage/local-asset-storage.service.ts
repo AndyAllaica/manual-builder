@@ -11,6 +11,10 @@ import { type AssetStorageService, type SaveCaptureAssetInput, type StoredAssetM
 export class LocalAssetStorageService implements AssetStorageService {
   constructor(private readonly configService: ConfigService) {}
 
+  getProvider() {
+    return 'local' as const;
+  }
+
   async saveCaptureAsset(input: SaveCaptureAssetInput): Promise<StoredAssetMetadata> {
     const parsedDataUrl = parseImageDataUrl(input.dataUrl);
     const maxSizeBytes = this.getMaxAssetSizeBytes();
