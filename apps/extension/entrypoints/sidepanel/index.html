@@ -18,9 +18,14 @@
         </p>
         <div class="hero-actions">
           <span id="status-badge" class="status-badge">Sin actividad</span>
-          <button id="clear-captures-button" class="clear-button" type="button">
-            Limpiar capturas
-          </button>
+          <div class="hero-controls">
+            <button id="toggle-capture-mode-button" class="clear-button" type="button">
+              Solo captura: no
+            </button>
+            <button id="clear-captures-button" class="clear-button" type="button">
+              Limpiar capturas
+            </button>
+          </div>
         </div>
       </header>
 
@@ -221,6 +226,22 @@
               <div class="capture-canvas-shell">
                 <canvas id="capture-canvas" aria-label="Vista previa de la captura seleccionada"></canvas>
               </div>
+
+              <div class="redaction-toolbar">
+                <button id="toggle-redaction-button" class="secondary-button" type="button">
+                  Ocultar informacion
+                </button>
+                <button id="undo-redaction-button" class="ghost-button" type="button">
+                  Deshacer zona
+                </button>
+                <button id="clear-redactions-button" class="ghost-button" type="button">
+                  Limpiar zonas
+                </button>
+                <span id="redaction-count" class="redaction-count">0 zonas ocultas</span>
+              </div>
+              <p id="redaction-hint" class="redaction-hint">
+                Activa Ocultar informacion y arrastra sobre cada dato sensible antes de agregar el paso.
+              </p>
 
               <p id="preview-caption" class="preview-caption"></p>
 

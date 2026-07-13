@@ -117,6 +117,20 @@ body {
   margin-top: 18px;
 }
 
+.hero-controls,
+.redaction-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#toggle-capture-mode-button.is-active {
+  border-color: rgba(45, 212, 191, 0.55);
+  background: rgba(45, 212, 191, 0.2);
+  color: #ccfbf1;
+}
+
 .status-badge,
 .clear-button,
 .mode-button,
@@ -415,6 +429,34 @@ button:disabled {
 
 .backend-meta {
   margin-top: 10px;
+}
+
+#capture-canvas.is-redacting {
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.redaction-toolbar {
+  margin-top: 14px;
+}
+
+#toggle-redaction-button.is-active {
+  border-color: #b91c1c;
+  background: #b91c1c;
+  color: #fff;
+}
+
+.redaction-count {
+  color: var(--panel-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.redaction-hint {
+  margin: 9px 0 0;
+  color: var(--panel-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .login-actions {

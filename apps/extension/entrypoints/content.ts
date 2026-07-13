@@ -49,7 +49,8 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
   let overlayElement: HTMLDivElement | null = null;
   let bannerElement: HTMLDivElement | null = null;
   let captureMode: CaptureMode = 'review';
-  let passiveCaptureSuppressionDeadline = 0;
+  let pendingCaptureOnlyElement: HTMLElement | null = null;
+  let captureSubmissionInFlight = false;
   let captureModeSyncInFlight: Promise<void> | null = null;
 
   const mutationObserver = new MutationObserver(() => {
@@ -112,13 +113,14 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
       return;
     }
 
-    passiveCaptureSuppressionDeadline = event.timeStamp + 800;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    pendingCaptureOnlyElement = targetElement;
     selectedElement = targetElement;
     hoveredElement = targetElement;
     updateOverlay(targetElement);
-
-    const selectedData = buildSelectedElementData(targetElement, win, doc);
-    void submitSelectedElement(selectedData);
   };
 
   const handleClickCapture = (event: MouseEvent): void => {
@@ -127,14 +129,16 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
     }
 
     if (captureMode === 'capture-only') {
-      if (event.timeStamp <= passiveCaptureSuppressionDeadline) {
-        passiveCaptureSuppressionDeadline = 0;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      if (captureSubmissionInFlight) {
         return;
       }
 
-      passiveCaptureSuppressionDeadline = 0;
-
-      const targetElement = resolveSelectableElement(doc, event.clientX, event.clientY);
+      const targetElement = resolveSelectableElement(doc, event.clientX, event.clientY) ?? pendingCaptureOnlyElement;
+      pendingCaptureOnlyElement = null;
       if (targetElement === null) {
         return;
       }
@@ -144,7 +148,16 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
       updateOverlay(targetElement);
 
       const selectedData = buildSelectedElementData(targetElement, win, doc);
-      void submitSelectedElement(selectedData);
+      captureSubmissionInFlight = true;
+      void submitSelectedElement(selectedData)
+        .then((response) => {
+          if ((response.replayAction || captureMode === 'capture-only') && isUsableElement(targetElement)) {
+            targetElement.click();
+          }
+        })
+        .finally(() => {
+          captureSubmissionInFlight = false;
+        });
       return;
     }
 
@@ -225,7 +238,7 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
     selectionModeEnabled = true;
     hoveredElement = null;
     selectedElement = null;
-    passiveCaptureSuppressionDeadline = 0;
+    pendingCaptureOnlyElement = null;
 
     showBanner();
     hideOverlay();
@@ -234,7 +247,7 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
   function deactivateSelectionMode(options: { preserveSelection: boolean }): void {
     selectionModeEnabled = false;
     hoveredElement = null;
-    passiveCaptureSuppressionDeadline = 0;
+    pendingCaptureOnlyElement = null;
     hideBanner();
 
     if (options.preserveSelection && isUsableElement(selectedElement)) {
@@ -315,12 +328,12 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
     updateOverlay(activeElement);
   }
 
-  async function submitSelectedElement(data: SelectedElementData): Promise<void> {
+  async function submitSelectedElement(data: SelectedElementData): Promise<SelectionCapturedResponse> {
     logSelectedElement(data);
 
     const response = await notifySelectionCaptured(data);
     if (!response.keepSelecting) {
-      return;
+      return response;
     }
 
     win.setTimeout(() => {
@@ -330,6 +343,8 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
 
       activateSelectionMode();
     }, 180);
+
+    return response;
   }
 
   async function syncCaptureMode(): Promise<void> {

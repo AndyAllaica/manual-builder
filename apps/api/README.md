@@ -107,7 +107,7 @@ GET http://localhost:3001/api/v1/assets/storage/status
 
 La respuesta incluye `configuredProvider` desde `.env` y `activeProvider` desde el servicio realmente inyectado. Para que las capturas nuevas suban a OneDrive, ambos deben ser `onedrive-business`.
 
-El token valido no demuestra por si solo que la extension haya enviado una captura. La subida ocurre al recibir `POST /api/v1/capture-sessions/:sessionId/captures`; al confirmar un paso puede recibirse ademas el contexto mediante `PATCH /api/v1/capture-sessions/captures/:captureId`.
+El token valido no demuestra por si solo que la extension haya enviado una captura. La extension conserva las capturas pendientes localmente y, al confirmar una, envia el original completo y el contexto mediante `POST /api/v1/capture-sessions/:sessionId/captures`. El endpoint `PATCH /api/v1/capture-sessions/captures/:captureId` queda disponible para revisiones o clientes que adjunten el contexto despues.
 
 Para comprobar las ultimas subidas:
 
@@ -137,6 +137,10 @@ MANUAL_BUILDER/captures/7f6f9d7f-18f4-4ef7-b332-e59a9ef9e65a/original-1783940000
 ```
 
 `ONEDRIVE_ROOT_PATH` define la carpeta raiz en tu nube. Si configuras `ONEDRIVE_ROOT_PATH=DTIC/MANUALES`, las imagenes se guardaran bajo `DTIC/MANUALES/captures/...`.
+
+Cada captura confirmada debe producir dos filas en `assets`, una con `kind = 'original'` y otra con `kind = 'context'`. El contexto es un recorte generado por la extension alrededor del elemento seleccionado; no existe para capturas que nunca fueron confirmadas con el flujo actualizado.
+
+Para vaciar todas las tablas de la aplicacion usa `database/truncate-data.sql`. El script no elimina archivos de OneDrive ni archivos locales, por lo que esos binarios deben limpiarse por separado si tambien quieres liberar almacenamiento.
 
 ## Base de datos institucional
 

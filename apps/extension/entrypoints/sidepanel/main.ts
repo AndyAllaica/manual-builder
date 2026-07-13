@@ -8,6 +8,7 @@ import {
   createEmptyManualDraft,
   createEmptyPanelState,
   createManualStep,
+  detectImageFormatFromDataUrl,
   getImageExtension,
   sanitizeManualAuthor,
   sanitizeManualDescription,
@@ -18,6 +19,7 @@ import {
   type CapturePanelState,
   type CapturedSelectionRecord,
   type ImageAssetFormat,
+  type ImageRedactionRegion,
   type ManualDraft,
   type ManualStep,
   type ReviewSurface,
@@ -59,6 +61,11 @@ interface PixelRect {
   height: number;
 }
 
+interface NormalizedPoint {
+  x: number;
+  y: number;
+}
+
 interface GeneratedImageAsset {
   dataUrl: string;
   format: ImageAssetFormat;
@@ -89,6 +96,10 @@ let draggedStepId: string | null = null;
 let stepDragJustFinished = false;
 let previewRenderToken = 0;
 let panelBusy = false;
+let redactionModeEnabled = false;
+let redactionDragStart: NormalizedPoint | null = null;
+let redactionDraft: ImageRedactionRegion | null = null;
+let redactionDraftCaptureId: string | null = null;
 let stepFormStepId: string | null = null;
 let stepFormTitle = '';
 let stepFormDescription = '';
@@ -124,6 +135,7 @@ let collaboratorRoleDraft: RemoteWorkspaceMemberRole = 'editor';
 const captureImageCache = new Map<string, Promise<HTMLImageElement>>();
 
 const statusBadge = queryElement<HTMLSpanElement>('status-badge');
+const toggleCaptureModeButton = queryElement<HTMLButtonElement>('toggle-capture-mode-button');
 const clearCapturesButton = queryElement<HTMLButtonElement>('clear-captures-button');
 const summaryTitle = queryElement<HTMLParagraphElement>('summary-title');
 const summaryText = queryElement<HTMLParagraphElement>('summary-text');
@@ -159,6 +171,11 @@ const errorText = queryElement<HTMLParagraphElement>('error-text');
 const previewSection = queryElement<HTMLElement>('preview-section');
 const reviewEmptySection = queryElement<HTMLElement>('review-empty-section');
 const captureCanvas = queryElement<HTMLCanvasElement>('capture-canvas');
+const toggleRedactionButton = queryElement<HTMLButtonElement>('toggle-redaction-button');
+const undoRedactionButton = queryElement<HTMLButtonElement>('undo-redaction-button');
+const clearRedactionsButton = queryElement<HTMLButtonElement>('clear-redactions-button');
+const redactionCount = queryElement<HTMLSpanElement>('redaction-count');
+const redactionHint = queryElement<HTMLParagraphElement>('redaction-hint');
 const previewCaption = queryElement<HTMLParagraphElement>('preview-caption');
 const captureHeading = queryElement<HTMLHeadingElement>('capture-heading');
 const captureTime = queryElement<HTMLParagraphElement>('capture-time');
@@ -203,6 +220,10 @@ const openPrintViewButton = queryElement<HTMLButtonElement>('open-print-view-but
 void initializeSidePanel();
 
 async function initializeSidePanel(): Promise<void> {
+  toggleCaptureModeButton.addEventListener('click', () => {
+    void runPanelAction(handleToggleCaptureMode);
+  });
+
   clearCapturesButton.addEventListener('click', () => {
     void browser.runtime.sendMessage({
       type: MESSAGE_TYPE_CLEAR_CAPTURES,
@@ -322,6 +343,25 @@ async function initializeSidePanel(): Promise<void> {
   discardCaptureButton.addEventListener('click', () => {
     void runPanelAction(handleDiscardSelectedCapture);
   });
+
+  toggleRedactionButton.addEventListener('click', () => {
+    redactionModeEnabled = !redactionModeEnabled;
+    resetRedactionDraft();
+    renderCapturePreview(getSelectedCapture());
+  });
+
+  undoRedactionButton.addEventListener('click', () => {
+    void runPanelAction(handleUndoRedaction);
+  });
+
+  clearRedactionsButton.addEventListener('click', () => {
+    void runPanelAction(handleClearRedactions);
+  });
+
+  captureCanvas.addEventListener('pointerdown', handleRedactionPointerDown);
+  captureCanvas.addEventListener('pointermove', handleRedactionPointerMove);
+  captureCanvas.addEventListener('pointerup', handleRedactionPointerUp);
+  captureCanvas.addEventListener('pointercancel', handleRedactionPointerCancel);
 
   saveStepButton.addEventListener('click', () => {
     void runPanelAction(handleSaveSelectedStep);
@@ -531,6 +571,7 @@ function render(): void {
   const selectedStep = getSelectedStep();
 
   renderStatusBadge();
+  renderCaptureModeButton();
   renderSummary();
   renderBackendSyncSection();
   renderPendingSection();
@@ -541,6 +582,14 @@ function render(): void {
   renderStepsList(selectedStep);
   renderManualMetaForm();
   renderExportState();
+}
+
+function renderCaptureModeButton(): void {
+  const enabled = currentState.captureMode === 'capture-only';
+  toggleCaptureModeButton.textContent = enabled ? 'Solo captura: si' : 'Solo captura: no';
+  toggleCaptureModeButton.classList.toggle('is-active', enabled);
+  toggleCaptureModeButton.setAttribute('aria-pressed', String(enabled));
+  toggleCaptureModeButton.disabled = panelBusy || currentState.status === 'capturing';
 }
 
 function renderStatusBadge(): void {
@@ -571,7 +620,7 @@ function renderSummary(): void {
 
   if (currentState.captureMode === 'capture-only') {
     summaryTitle.textContent = 'Solo captura listo';
-    summaryText.textContent = 'Presiona ALT + S en la pagina. Cada clic guardara una captura en cola, dejara pasar la accion real del elemento y el selector seguira activo hasta que presiones ESC.';
+    summaryText.textContent = 'Presiona ALT + S en la pagina. Cada clic capturara primero, reproducira despues la accion del elemento y mantendra el selector activo hasta que presiones ESC.';
     return;
   }
 
@@ -753,6 +802,8 @@ function renderCapturePreview(selectedCapture: CapturedSelectionRecord | null): 
   previewRenderToken += 1;
 
   if (selectedCapture === null) {
+    redactionModeEnabled = false;
+    resetRedactionDraft();
     previewSection.hidden = true;
     reviewEmptySection.hidden = false;
     previewCaption.textContent = '';
@@ -775,6 +826,20 @@ function renderCapturePreview(selectedCapture: CapturedSelectionRecord | null): 
   detailSurface.textContent = `${formatReviewSurface(currentState.reviewSurface)} | ${formatRemoteSyncStatus(selectedCapture.remoteSyncStatus)}`;
   confirmCaptureButton.disabled = panelBusy;
   discardCaptureButton.disabled = panelBusy;
+  const regionCount = selectedCapture.redactionRegions.length;
+  toggleRedactionButton.disabled = panelBusy;
+  toggleRedactionButton.classList.toggle('is-active', redactionModeEnabled);
+  toggleRedactionButton.setAttribute('aria-pressed', String(redactionModeEnabled));
+  toggleRedactionButton.textContent = redactionModeEnabled
+    ? 'Ocultando informacion'
+    : 'Ocultar informacion';
+  undoRedactionButton.disabled = panelBusy || regionCount === 0;
+  clearRedactionsButton.disabled = panelBusy || regionCount === 0;
+  redactionCount.textContent = `${regionCount} zona${regionCount === 1 ? '' : 's'} oculta${regionCount === 1 ? '' : 's'}`;
+  redactionHint.textContent = redactionModeEnabled
+    ? 'Arrastra sobre cada dato sensible. El difuminado se aplicara al original y al contexto antes de subirlos.'
+    : 'Activa Ocultar informacion y arrastra sobre cada dato sensible antes de agregar el paso.';
+  captureCanvas.classList.toggle('is-redacting', redactionModeEnabled);
 
   const renderToken = previewRenderToken;
   void drawPreview(selectedCapture, 'full', renderToken);
@@ -804,6 +869,7 @@ function renderCaptureQueue(selectedCapture: CapturedSelectionRecord | null): vo
     }
     button.disabled = panelBusy;
     button.addEventListener('click', () => {
+      resetRedactionDraft();
       selectedCaptureId = capture.id;
       render();
     });
@@ -1015,7 +1081,10 @@ async function drawPreview(
       return;
     }
 
-    drawCapturePreviewToCanvas(captureCanvas, image, capture, mode);
+    const draftRegions = redactionDraftCaptureId === capture.id && redactionDraft !== null
+      ? [...capture.redactionRegions, redactionDraft]
+      : capture.redactionRegions;
+    drawCapturePreviewToCanvas(captureCanvas, image, capture, mode, draftRegions);
   } catch (error) {
     if (renderToken !== previewRenderToken) {
       return;
@@ -1024,6 +1093,143 @@ async function drawPreview(
     clearPreviewCanvas();
     previewCaption.textContent = `No se pudo dibujar la vista previa: ${getErrorMessage(error)}`;
   }
+}
+
+async function handleToggleCaptureMode(): Promise<void> {
+  const panelState = await loadPanelState();
+  await savePanelState({
+    ...panelState,
+    captureMode: panelState.captureMode === 'capture-only' ? 'review' : 'capture-only',
+    lastUpdatedAt: new Date().toISOString(),
+  });
+  await refreshState();
+}
+
+function handleRedactionPointerDown(event: PointerEvent): void {
+  const capture = getSelectedCapture();
+  if (!redactionModeEnabled || panelBusy || capture === null || event.button !== 0) {
+    return;
+  }
+
+  event.preventDefault();
+  captureCanvas.setPointerCapture(event.pointerId);
+  redactionDragStart = getNormalizedCanvasPoint(event);
+  redactionDraft = null;
+  redactionDraftCaptureId = capture.id;
+}
+
+function handleRedactionPointerMove(event: PointerEvent): void {
+  if (redactionDragStart === null || redactionDraftCaptureId === null) {
+    return;
+  }
+
+  event.preventDefault();
+  redactionDraft = createRedactionRegion(redactionDragStart, getNormalizedCanvasPoint(event));
+  redrawSelectedCapture();
+}
+
+function handleRedactionPointerUp(event: PointerEvent): void {
+  if (redactionDragStart === null || redactionDraftCaptureId === null) {
+    return;
+  }
+
+  event.preventDefault();
+  const captureId = redactionDraftCaptureId;
+  const region = createRedactionRegion(redactionDragStart, getNormalizedCanvasPoint(event));
+  resetRedactionDraft();
+  if (captureCanvas.hasPointerCapture(event.pointerId)) {
+    captureCanvas.releasePointerCapture(event.pointerId);
+  }
+
+  if (region.width < 0.006 || region.height < 0.006) {
+    redrawSelectedCapture();
+    return;
+  }
+
+  void runPanelAction(async () => {
+    await updateCaptureRedactions(captureId, (regions) => [...regions, region]);
+  });
+}
+
+function handleRedactionPointerCancel(event: PointerEvent): void {
+  resetRedactionDraft();
+  if (captureCanvas.hasPointerCapture(event.pointerId)) {
+    captureCanvas.releasePointerCapture(event.pointerId);
+  }
+  redrawSelectedCapture();
+}
+
+async function handleUndoRedaction(): Promise<void> {
+  const capture = getSelectedCapture();
+  if (capture === null) {
+    return;
+  }
+
+  await updateCaptureRedactions(capture.id, (regions) => regions.slice(0, -1));
+}
+
+async function handleClearRedactions(): Promise<void> {
+  const capture = getSelectedCapture();
+  if (capture === null) {
+    return;
+  }
+
+  await updateCaptureRedactions(capture.id, () => []);
+}
+
+async function updateCaptureRedactions(
+  captureId: string,
+  update: (regions: ImageRedactionRegion[]) => ImageRedactionRegion[],
+): Promise<void> {
+  const panelState = await loadPanelState();
+  if (!panelState.captures.some((capture) => capture.id === captureId)) {
+    await refreshState();
+    return;
+  }
+
+  await savePanelState({
+    ...panelState,
+    captures: panelState.captures.map((capture) => capture.id === captureId
+      ? { ...capture, redactionRegions: update(capture.redactionRegions) }
+      : capture),
+    lastUpdatedAt: new Date().toISOString(),
+  });
+  await refreshState();
+}
+
+function getNormalizedCanvasPoint(event: PointerEvent): NormalizedPoint {
+  const bounds = captureCanvas.getBoundingClientRect();
+  return {
+    x: clampNumber((event.clientX - bounds.left) / Math.max(1, bounds.width), 0, 1),
+    y: clampNumber((event.clientY - bounds.top) / Math.max(1, bounds.height), 0, 1),
+  };
+}
+
+function createRedactionRegion(start: NormalizedPoint, end: NormalizedPoint): ImageRedactionRegion {
+  const x = Math.min(start.x, end.x);
+  const y = Math.min(start.y, end.y);
+  return {
+    x,
+    y,
+    width: Math.max(0, Math.max(start.x, end.x) - x),
+    height: Math.max(0, Math.max(start.y, end.y) - y),
+  };
+}
+
+function resetRedactionDraft(): void {
+  redactionDragStart = null;
+  redactionDraft = null;
+  redactionDraftCaptureId = null;
+}
+
+function redrawSelectedCapture(): void {
+  const capture = getSelectedCapture();
+  if (capture === null) {
+    return;
+  }
+
+  previewRenderToken += 1;
+  void drawPreview(capture, 'full', previewRenderToken);
 }
 
 async function handleConfirmSelectedCapture(): Promise<void> {
@@ -1036,17 +1242,23 @@ async function handleConfirmSelectedCapture(): Promise<void> {
     return;
   }
 
-  const contextAsset = await createContextImageAsset(capture);
+  const originalAsset = await createRedactedOriginalImageAsset(capture);
+  const protectedCapture: CapturedSelectionRecord = {
+    ...capture,
+    imageDataUrl: originalAsset.dataUrl,
+    redactionRegions: [],
+  };
+  const contextAsset = await createContextImageAsset(protectedCapture);
   const nextOrder = manualDraft.steps.length + 1;
   const localStep = createManualStep({
-    capture,
+    capture: protectedCapture,
     order: nextOrder,
     title: buildStepTitleSuggestion(capture),
     description: '',
     imageContextDataUrl: contextAsset.dataUrl,
     imageContextFormat: contextAsset.format,
   });
-  const nextStep = await syncConfirmedStepToBackend(capture, localStep, contextAsset);
+  const nextStep = await syncConfirmedStepToBackend(protectedCapture, localStep, contextAsset);
 
   selectedStepId = nextStep.id;
   selectedCaptureId = getNextCaptureId(panelState.captures, capture.id);
@@ -2090,7 +2302,7 @@ async function syncConfirmedStepToBackend(
     return step;
   }
 
-  const configurationError = getBackendSettingsConfigurationError(settings, true);
+  const configurationError = getBackendSettingsConfigurationError(settings, false);
   if (configurationError !== null) {
     await saveBackendSyncSettings({
       ...settings,
@@ -2100,58 +2312,48 @@ async function syncConfirmedStepToBackend(
     return applyRemoteSyncError(step, settings.manualId, capture.remoteCaptureId, configurationError);
   }
 
+  let remoteCaptureId: string | null = null;
+
   try {
     const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
     const sessionId = await ensureRemoteSessionId(client, settings);
-    const canReuseRemoteCapture =
-      capture.remoteCaptureId !== null &&
-      capture.remoteSessionId !== null &&
-      capture.remoteSessionId === sessionId;
+    const createdCapture = await client.createCapture(sessionId, {
+      ...buildRemoteCapturePayload(capture.selectedElement, capture.imageDataUrl, step.title),
+      description: step.description,
+      framing: DEFAULT_REMOTE_FRAMING,
+      contextImageDataUrl: contextAsset.dataUrl,
+    });
+    remoteCaptureId = createdCapture.capture.id;
 
-    let remoteCaptureId = capture.remoteCaptureId;
-
-    if (!canReuseRemoteCapture) {
-      const createdCapture = await client.createCapture(sessionId, {
-        ...buildRemoteCapturePayload(capture.selectedElement, capture.imageDataUrl, step.title),
-        description: step.description,
-        framing: DEFAULT_REMOTE_FRAMING,
-        contextImageDataUrl: contextAsset.dataUrl,
-      });
-      remoteCaptureId = createdCapture.capture.id;
-    } else if (remoteCaptureId !== null) {
-      await client.reviewCapture(remoteCaptureId, {
-        status: 'pending',
+    let remoteStepId: string | null = null;
+    if (settings.manualId.trim().length > 0) {
+      const response = await client.addStepFromCapture(settings.manualId, {
+        captureId: remoteCaptureId,
         title: step.title,
         description: step.description,
         framing: DEFAULT_REMOTE_FRAMING,
-        contextImageDataUrl: contextAsset.dataUrl,
       });
+      remoteStepId = response.step.id;
     }
-
-    if (remoteCaptureId === null) {
-      throw new Error('No se pudo resolver el identificador remoto de la captura.');
-    }
-
-    const response = await client.addStepFromCapture(settings.manualId, {
-      captureId: remoteCaptureId,
-      title: step.title,
-      description: step.description,
-      framing: DEFAULT_REMOTE_FRAMING,
-    });
 
     await saveBackendSyncSettings({
       ...settings,
       apiBaseUrl: client.baseUrl,
       sessionId,
       sessionActionId: settings.actionId,
+      storageProvider: createdCapture.originalAsset.provider === 'local'
+        ? 'local'
+        : createdCapture.originalAsset.provider === 'onedrive-business'
+          ? 'onedrive-business'
+          : settings.storageProvider,
       lastError: null,
     });
 
     return {
       ...step,
-      remoteManualId: settings.manualId,
+      remoteManualId: settings.manualId || null,
       remoteCaptureId,
-      remoteStepId: response.step.id,
+      remoteStepId,
       remoteSyncStatus: 'synced',
       remoteSyncError: null,
     };
@@ -2163,7 +2365,7 @@ async function syncConfirmedStepToBackend(
       lastError: syncError,
     });
 
-    return applyRemoteSyncError(step, settings.manualId, capture.remoteCaptureId, syncError);
+    return applyRemoteSyncError(step, settings.manualId, remoteCaptureId, syncError);
   }
 }
 
@@ -2234,6 +2436,51 @@ async function syncEditedStepToBackend(step: ManualStep): Promise<ManualStep> {
       remoteSyncError: syncError,
     };
   }
+}
+
+async function createRedactedOriginalImageAsset(
+  capture: CapturedSelectionRecord,
+): Promise<GeneratedImageAsset> {
+  const format = detectImageFormatFromDataUrl(capture.imageDataUrl);
+  if (capture.redactionRegions.length === 0) {
+    return {
+      dataUrl: capture.imageDataUrl,
+      format,
+    };
+  }
+
+  const image = await loadCaptureImage(capture.imageDataUrl);
+  const detachedCanvas = document.createElement('canvas');
+  detachedCanvas.width = Math.max(1, image.naturalWidth);
+  detachedCanvas.height = Math.max(1, image.naturalHeight);
+  const context = detachedCanvas.getContext('2d');
+  if (context === null) {
+    throw new Error('No se pudo preparar la captura protegida.');
+  }
+
+  context.drawImage(image, 0, 0);
+  applyImageRedactions(
+    context,
+    image.naturalWidth,
+    image.naturalHeight,
+    { x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight },
+    detachedCanvas.width,
+    detachedCanvas.height,
+    capture.redactionRegions,
+  );
+
+  if (format === 'jpeg') {
+    return { dataUrl: detachedCanvas.toDataURL('image/jpeg', 0.9), format };
+  }
+
+  if (format === 'webp') {
+    const dataUrl = detachedCanvas.toDataURL('image/webp', 0.9);
+    if (dataUrl.startsWith('data:image/webp')) {
+      return { dataUrl, format };
+    }
+  }
+
+  return { dataUrl: detachedCanvas.toDataURL('image/png'), format: 'png' };
 }
 
 async function createContextImageAsset(
@@ -2363,7 +2610,7 @@ function buildBackendSyncStatusText(): string {
   }
 
   if (!currentBackendSettings.enabled) {
-    return 'Inicia sesion para guardar las nuevas capturas en el backend y en el proveedor remoto configurado.';
+    return 'Inicia sesion para guardar las capturas confirmadas en el backend y en el proveedor remoto configurado.';
   }
 
   if (currentBackendSettings.lastError !== null) {
@@ -2372,7 +2619,7 @@ function buildBackendSyncStatusText(): string {
 
   const configurationWarning = getBackendSettingsConfigurationError(currentBackendSettings, false);
   if (configurationWarning !== null) {
-    return `${configurationWarning} Selecciona una accion para activar el guardado automatico de nuevas capturas.`;
+    return `${configurationWarning} Selecciona una accion para guardar remotamente las capturas que confirmes.`;
   }
 
   if (currentBackendSettings.storageProvider === 'local') {
@@ -2380,7 +2627,7 @@ function buildBackendSyncStatusText(): string {
   }
 
   const summary: string[] = [
-    `Sincronizacion automatica activa en ${currentBackendSettings.workspaceName ?? currentBackendSettings.apiBaseUrl}`,
+    `Sincronizacion al confirmar activa en ${currentBackendSettings.workspaceName ?? currentBackendSettings.apiBaseUrl}`,
   ];
   if (currentBackendSettings.username.trim().length > 0) {
     summary.push(`Usuario: ${currentBackendSettings.displayName || currentBackendSettings.username}`);
@@ -2505,6 +2752,7 @@ function drawCapturePreviewToCanvas(
   image: HTMLImageElement,
   capture: CapturedSelectionRecord,
   mode: PreviewMode,
+  redactionRegions: ImageRedactionRegion[] = capture.redactionRegions,
 ): void {
   const imageScale = getImageScale(image, capture);
   const sourceRect = mode === 'context'
@@ -2541,6 +2789,16 @@ function drawCapturePreviewToCanvas(
     drawHeight,
   );
 
+  applyImageRedactions(
+    context,
+    image.naturalWidth,
+    image.naturalHeight,
+    sourceRect,
+    drawWidth,
+    drawHeight,
+    redactionRegions,
+  );
+
   const drawScaleX = drawWidth / sourceRect.width;
   const drawScaleY = drawHeight / sourceRect.height;
   const highlightRect = {
@@ -2552,6 +2810,118 @@ function drawCapturePreviewToCanvas(
 
   drawOutsideMask(context, drawWidth, drawHeight, highlightRect, mode);
   drawHighlight(context, highlightRect);
+}
+
+function applyImageRedactions(
+  context: CanvasRenderingContext2D,
+  imageWidth: number,
+  imageHeight: number,
+  sourceRect: PixelRect,
+  canvasWidth: number,
+  canvasHeight: number,
+  regions: ImageRedactionRegion[],
+): void {
+  if (regions.length === 0) {
+    return;
+  }
+
+  const snapshot = document.createElement('canvas');
+  snapshot.width = canvasWidth;
+  snapshot.height = canvasHeight;
+  const snapshotContext = snapshot.getContext('2d');
+  if (snapshotContext === null) {
+    throw new Error('No se pudo preparar el procesamiento de informacion sensible.');
+  }
+  snapshotContext.drawImage(context.canvas, 0, 0);
+
+  const scaleX = canvasWidth / sourceRect.width;
+  const scaleY = canvasHeight / sourceRect.height;
+
+  for (const region of regions) {
+    const imageRegion: PixelRect = {
+      x: region.x * imageWidth,
+      y: region.y * imageHeight,
+      width: region.width * imageWidth,
+      height: region.height * imageHeight,
+    };
+    const visibleRegion = intersectPixelRects(imageRegion, sourceRect);
+    if (visibleRegion === null) {
+      continue;
+    }
+
+    const targetRegion: PixelRect = {
+      x: (visibleRegion.x - sourceRect.x) * scaleX,
+      y: (visibleRegion.y - sourceRect.y) * scaleY,
+      width: visibleRegion.width * scaleX,
+      height: visibleRegion.height * scaleY,
+    };
+    drawPixelatedRegion(context, snapshot, targetRegion);
+  }
+}
+
+function drawPixelatedRegion(
+  context: CanvasRenderingContext2D,
+  snapshot: HTMLCanvasElement,
+  region: PixelRect,
+): void {
+  const width = Math.max(1, Math.ceil(region.width));
+  const height = Math.max(1, Math.ceil(region.height));
+  if (width < 2 || height < 2) {
+    return;
+  }
+
+  const pixelCanvas = document.createElement('canvas');
+  pixelCanvas.width = Math.max(1, Math.ceil(width / 20));
+  pixelCanvas.height = Math.max(1, Math.ceil(height / 20));
+  const pixelContext = pixelCanvas.getContext('2d');
+  if (pixelContext === null) {
+    throw new Error('No se pudo difuminar la zona seleccionada.');
+  }
+
+  pixelContext.drawImage(
+    snapshot,
+    region.x,
+    region.y,
+    region.width,
+    region.height,
+    0,
+    0,
+    pixelCanvas.width,
+    pixelCanvas.height,
+  );
+
+  context.save();
+  context.beginPath();
+  context.rect(region.x, region.y, region.width, region.height);
+  context.clip();
+  context.imageSmoothingEnabled = false;
+  context.filter = `blur(${Math.max(8, Math.min(18, Math.round(Math.min(width, height) / 7)))}px)`;
+  context.drawImage(
+    pixelCanvas,
+    0,
+    0,
+    pixelCanvas.width,
+    pixelCanvas.height,
+    region.x - 10,
+    region.y - 10,
+    region.width + 20,
+    region.height + 20,
+  );
+  context.filter = 'none';
+  context.fillStyle = 'rgba(19, 34, 56, 0.14)';
+  context.fillRect(region.x, region.y, region.width, region.height);
+  context.restore();
+}
+
+function intersectPixelRects(first: PixelRect, second: PixelRect): PixelRect | null {
+  const x = Math.max(first.x, second.x);
+  const y = Math.max(first.y, second.y);
+  const right = Math.min(first.x + first.width, second.x + second.width);
+  const bottom = Math.min(first.y + first.height, second.y + second.height);
+
+  return right > x && bottom > y
+    ? { x, y, width: right - x, height: bottom - y }
+    : null;
 }
 
 function drawOutsideMask(

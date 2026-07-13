@@ -57,12 +57,20 @@ export interface ManualStepGuide {
   detailCaption?: string;
 }
 
+export interface ImageRedactionRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface CapturedSelectionRecord {
   id: string;
   createdAt: string;
   imageDataUrl: string;
   selectedElement: SelectedElementData;
   contextRegion: SelectionRect;
+  redactionRegions: ImageRedactionRegion[];
   tabId: number | null;
   windowId: number | null;
   remoteSessionId: string | null;
@@ -224,6 +232,7 @@ export function createCapturedSelectionRecord(
     imageDataUrl,
     selectedElement,
     contextRegion: buildContextRegion(selectedElement),
+    redactionRegions: [],
     tabId,
     windowId,
     remoteSessionId: null,
@@ -275,7 +284,7 @@ export function normalizePanelState(state: CapturePanelState): CapturePanelState
     lastUpdatedAt: state.lastUpdatedAt,
     reviewSurface: state.reviewSurface,
     reviewTabId: state.reviewTabId,
-    captureMode: 'review',
+    captureMode: state.captureMode === 'capture-only' ? 'capture-only' : 'review',
   };
 }
 
@@ -470,12 +479,44 @@ function buildFallbackStepTitle(step: ManualStep): string {
 function normalizeCapturedSelectionRecord(capture: CapturedSelectionRecord): CapturedSelectionRecord {
   return {
     ...capture,
+    redactionRegions: normalizeImageRedactionRegions(capture.redactionRegions),
     remoteSessionId: normalizeNullableString(capture.remoteSessionId),
     remoteCaptureId: normalizeNullableString(capture.remoteCaptureId),
     remoteManualId: normalizeNullableString(capture.remoteManualId),
     remoteSyncStatus: capture.remoteSyncStatus ?? 'idle',
     remoteSyncError: normalizeNullableString(capture.remoteSyncError),
   };
+}
+
+function normalizeImageRedactionRegions(value: unknown): ImageRedactionRegion[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((region): ImageRedactionRegion[] => {
+    if (typeof region !== 'object' || region === null) {
+      return [];
+    }
+
+    const candidate = region as Partial<ImageRedactionRegion>;
+    if (
+      !Number.isFinite(candidate.x) ||
+      !Number.isFinite(candidate.y) ||
+      !Number.isFinite(candidate.width) ||
+      !Number.isFinite(candidate.height)
+    ) {
+      return [];
+    }
+
+    const x = clamp(candidate.x as number, 0, 1);
+    const y = clamp(candidate.y as number, 0, 1);
+    const width = clamp(candidate.width as number, 0, 1 - x);
+    const height = clamp(candidate.height as number, 0, 1 - y);
+
+    return width >= 0.002 && height >= 0.002
+      ? [{ x, y, width, height }]
+      : [];
+  });
 }
 
 function normalizeManualStep(step: ManualStep): ManualStep {

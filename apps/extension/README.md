@@ -12,7 +12,7 @@ Este paquete contiene la extension **Manual Builder** en su etapa actual. Permit
 - Confirmar o descartar capturas antes de guardarlas.
 - Construir una lista de pasos del manual con titulo y descripcion editables.
 - Reordenar, eliminar y exportar pasos localmente.
-- Sincronizar automaticamente las nuevas capturas con el backend NestJS despues de iniciar sesion y seleccionar una accion.
+- Sincronizar las capturas confirmadas con el backend NestJS despues de iniciar sesion y seleccionar una accion.
 - Iniciar sesion con usuario/contrasena simple contra el backend.
 - Seleccionar workspaces disponibles para el usuario autenticado.
 - Crear workspaces y agregar colaboradores por nombre de usuario.
@@ -130,17 +130,19 @@ pnpm build:firefox
    - La extension usa el token del usuario autenticado.
    - Solo carga workspaces donde el usuario es miembro.
    - La extension crea o reutiliza una sesion remota para la accion seleccionada.
-   - La captura completa se envia automaticamente al backend.
-   - Al confirmar el paso, la extension adjunta tambien el recorte contextual y crea el paso remoto.
-   - Al descartar una captura ya sincronizada, intenta marcarla como descartada en el backend.
+   - Las capturas pendientes permanecen en la extension y todavia no se envian al backend.
+   - Al confirmar, se envian juntos el original completo y el recorte contextual.
+   - Si existe un manual remoto seleccionado, la misma confirmacion crea tambien el paso remoto.
 8. La interfaz de revision permite:
    - Ver la captura completa con el elemento resaltado.
+   - Marcar una o varias zonas sensibles para difuminarlas de forma irreversible.
    - Confirmarla y crear un `ManualStep`.
    - Descartarla si no sirve.
 9. Cuando confirmas una captura:
-   - Se genera una imagen contextual optimizada.
+   - Se genera un original protegido y una imagen contextual protegida y optimizada.
    - Se guarda un paso persistente en `storage.local`.
-   - Si el backend esta activo y hay manual remoto seleccionado, se crea tambien el paso remoto.
+   - Si el backend esta activo, ambos assets se guardan mediante el proveedor configurado.
+   - Si hay manual remoto seleccionado, se crea tambien el paso remoto.
    - El paso queda disponible para edicion, reordenacion y exportacion.
 10. Si cargas un manual remoto existente:
    - La extension descarga los pasos y sus imagenes desde el backend.
@@ -158,6 +160,10 @@ pnpm build:firefox
    - Agregar una descripcion introductoria.
    - Exportar un PDF real con portada y una pagina por paso.
    - Imprimir usando el dialogo nativo del navegador como respaldo.
+
+### Modo Solo captura
+
+El boton `Solo captura` mantiene el selector activo para registrar varias acciones consecutivas. En este modo cada clic se intercepta, se captura primero la pestana visible y solo despues se reproduce el clic real del elemento. `ESC` termina la seleccion continua.
 
 ### Comportamiento por navegador
 
