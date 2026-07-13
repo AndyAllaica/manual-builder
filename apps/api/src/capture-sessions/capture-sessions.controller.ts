@@ -50,7 +50,7 @@ export class CaptureSessionsController {
       textSnippet: body.textSnippet ?? null,
       title: body.title,
       description: body.description,
-      framing: body.framing ?? 'context',
+      framing: body.framing ?? 'full',
       originalImageDataUrl: body.originalImageDataUrl,
       contextImageDataUrl: body.contextImageDataUrl ?? null,
     });

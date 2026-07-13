@@ -7,13 +7,16 @@ import express from 'express';
 import { resolve } from 'node:path';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
   const configService = app.get(ConfigService);
   const port = configService.get<string>('PORT', '3001');
+  const maxJsonBodySize = configService.get<string>('MAX_JSON_BODY_SIZE', '25mb');
   const storageRoot = resolve(__dirname, '..', configService.get<string>('STORAGE_ROOT', 'storage'));
 
   await mkdir(storageRoot, { recursive: true });
 
+  app.use(express.json({ limit: maxJsonBodySize }));
+  app.use(express.urlencoded({ limit: maxJsonBodySize, extended: true }));
   app.setGlobalPrefix('api');
   app.enableVersioning({
     type: VersioningType.URI,

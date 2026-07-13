@@ -21,7 +21,7 @@ export class AssetEntity {
   @Column({ name: 'storage_path', type: 'varchar', length: 500 })
   storagePath!: string;
 
-  @Column({ name: 'public_url', type: 'varchar', length: 500 })
+  @Column({ name: 'public_url', type: 'text', default: '' })
   publicUrl!: string;
 
   @Column({ name: 'size_bytes', type: 'integer' })

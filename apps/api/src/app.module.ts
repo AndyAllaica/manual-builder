@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { resolve } from 'node:path';
 import { AppController } from './app.controller';
+import { AssetsModule } from './assets/assets.module';
 import { AuthModule } from './auth/auth.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { CaptureSessionsModule } from './capture-sessions/capture-sessions.module';
@@ -25,6 +26,7 @@ import { createTypeOrmOptions } from './database/typeorm.config';
     }),
     AuthModule,
     WorkspacesModule,
+    AssetsModule,
     CatalogModule,
     ManualsModule,
     CaptureSessionsModule,

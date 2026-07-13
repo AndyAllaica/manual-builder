@@ -79,14 +79,14 @@ interface ExportedManualDocument {
 }
 
 const MANUAL_PAGE_PATH = '/manual.html' as const;
-const DEFAULT_REMOTE_FRAMING = 'context' as const;
+const DEFAULT_REMOTE_FRAMING = 'full' as const;
 
 let currentState: CapturePanelState = createEmptyPanelState();
 let currentDraft: ManualDraft = createEmptyManualDraft();
 let currentBackendSettings: BackendSyncSettings = createEmptyBackendSyncSettings();
 let selectedCaptureId: string | null = null;
 let selectedStepId: string | null = null;
-let previewMode: PreviewMode = 'context';
+let previewMode: PreviewMode = 'full';
 let draggedStepId: string | null = null;
 let stepDragJustFinished = false;
 let previewRenderToken = 0;

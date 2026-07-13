@@ -469,7 +469,7 @@ export function buildRemoteCapturePayload(
     textSnippet: selectedElement.text,
     title,
     description: '',
-    framing: 'context',
+    framing: 'full',
     originalImageDataUrl: imageDataUrl,
   };
 }

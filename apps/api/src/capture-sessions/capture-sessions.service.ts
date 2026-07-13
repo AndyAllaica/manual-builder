@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { type AuthenticatedUser } from '../auth/auth.types';
 import { ManualBuilderRepository } from '../data/manual-builder.repository';
 import {
@@ -6,13 +6,18 @@ import {
   type CreateCaptureSessionInput,
   type ReviewCaptureInput,
 } from '../domain/manual-builder.types';
-import { LocalAssetStorageService } from '../storage/local-asset-storage.service';
+import {
+  ASSET_STORAGE_SERVICE,
+  type AssetStorageService,
+  type StoredAssetMetadata,
+} from '../storage/asset-storage.types';
 
 @Injectable()
 export class CaptureSessionsService {
   constructor(
     private readonly repository: ManualBuilderRepository,
-    private readonly localAssetStorageService: LocalAssetStorageService,
+    @Inject(ASSET_STORAGE_SERVICE)
+    private readonly assetStorageService: AssetStorageService,
   ) {}
 
   async listCaptureSessions(user: AuthenticatedUser, actionId?: string) {
@@ -72,17 +77,17 @@ export class CaptureSessionsService {
       await this.repository.getWorkspaceIdByCaptureSessionId(sessionId),
     );
 
-    const storedOriginalAsset = await this.localAssetStorageService.saveCaptureAsset({
+    const storedOriginalAsset = await this.assetStorageService.saveCaptureAsset({
       sessionId,
       kind: 'original',
       dataUrl: input.originalImageDataUrl,
     });
 
-    let storedContextAsset: Awaited<ReturnType<LocalAssetStorageService['saveCaptureAsset']>> | null = null;
+    let storedContextAsset: StoredAssetMetadata | null = null;
 
     try {
       if (input.contextImageDataUrl !== undefined && input.contextImageDataUrl !== null) {
-        storedContextAsset = await this.localAssetStorageService.saveCaptureAsset({
+        storedContextAsset = await this.assetStorageService.saveCaptureAsset({
           sessionId,
           kind: 'context',
           dataUrl: input.contextImageDataUrl,
@@ -108,9 +113,9 @@ export class CaptureSessionsService {
         contextAsset: capture.contextAssetId === null ? null : await this.repository.findAssetById(capture.contextAssetId),
       };
     } catch (error) {
-      await this.localAssetStorageService.deleteStoredAsset(storedOriginalAsset.storagePath);
+      await this.assetStorageService.deleteStoredAsset(storedOriginalAsset.storagePath);
       if (storedContextAsset !== null) {
-        await this.localAssetStorageService.deleteStoredAsset(storedContextAsset.storagePath);
+        await this.assetStorageService.deleteStoredAsset(storedContextAsset.storagePath);
       }
 
       throw error;
@@ -131,11 +136,11 @@ export class CaptureSessionsService {
     const previousContextAsset = existingCapture.contextAssetId === null
       ? null
       : await this.repository.findAssetById(existingCapture.contextAssetId);
-    let storedContextAsset: Awaited<ReturnType<LocalAssetStorageService['saveCaptureAsset']>> | null = null;
+    let storedContextAsset: StoredAssetMetadata | null = null;
 
     try {
       if (input.contextImageDataUrl !== null && input.contextImageDataUrl !== undefined) {
-        storedContextAsset = await this.localAssetStorageService.saveCaptureAsset({
+        storedContextAsset = await this.assetStorageService.saveCaptureAsset({
           sessionId: existingCapture.sessionId,
           kind: 'context',
           dataUrl: input.contextImageDataUrl,
@@ -151,7 +156,7 @@ export class CaptureSessionsService {
       });
 
       if (storedContextAsset !== null && previousContextAsset !== null) {
-        await this.localAssetStorageService.deleteStoredAsset(previousContextAsset.storagePath);
+        await this.assetStorageService.deleteStoredAsset(previousContextAsset.storagePath);
       }
 
       return {
@@ -161,7 +166,7 @@ export class CaptureSessionsService {
       };
     } catch (error) {
       if (storedContextAsset !== null) {
-        await this.localAssetStorageService.deleteStoredAsset(storedContextAsset.storagePath);
+        await this.assetStorageService.deleteStoredAsset(storedContextAsset.storagePath);
       }
 
       throw error;
