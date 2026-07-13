@@ -280,8 +280,11 @@ async function drawStepPage(
   const generalCard = { x: 30, y: 125, width: 518, height: 330 };
   const actionCard = { x: 564, y: 286, width: 248, height: 169 };
   const detailCard = { x: 564, y: 125, width: 248, height: 145 };
+  const hasExpectedResult = content.expectedResult.trim().length > 0;
   const expectedCard = { x: 30, y: 38, width: 518, height: 70 };
-  const resourceCard = { x: 564, y: 38, width: 248, height: 70 };
+  const resourceCard = hasExpectedResult
+    ? { x: 564, y: 38, width: 248, height: 70 }
+    : { x: 30, y: 38, width: 782, height: 70 };
 
   drawCard(page, generalCard, theme.white, theme.softBorder);
   let generalPlacement: ImagePlacement | undefined;
@@ -294,7 +297,7 @@ async function drawStepPage(
   if (generalPlacement !== undefined && shouldDrawHighlight(step, options.drawSelectionHighlight ?? 'auto')) {
     const highlight = rectToPdfCoordinates(step.selectedElement.rect, step.selectedElement.viewport, generalPlacement);
     if (highlight !== undefined) {
-      page.drawRectangle({ ...highlight, borderColor: hexToRgb(theme.primaryRed), borderWidth: 2.2 });
+      drawSelectionHighlight(page, highlight, theme);
     }
   }
 
@@ -342,19 +345,21 @@ async function drawStepPage(
     maxLines: 1,
   });
 
-  drawCard(page, expectedCard, theme.white, theme.softBorder);
-  page.drawCircle({ x: expectedCard.x + 18, y: expectedCard.y + expectedCard.height - 18, size: 5, color: hexToRgb(theme.green) });
-  drawLabel(page, 'RESULTADO ESPERADO', expectedCard.x + 30, expectedCard.y + expectedCard.height - 15, fonts.bold, theme.green, fonts.boldIsCustom, 8);
-  drawTextBox(page, content.expectedResult, fonts, theme, {
-    x: expectedCard.x + 14,
-    top: expectedCard.y + expectedCard.height - 30,
-    width: expectedCard.width - 28,
-    height: 34,
-    preferredSize: 8.5,
-    minimumSize: 7,
-    color: theme.darkText,
-    maxLines: 3,
-  });
+  if (hasExpectedResult) {
+    drawCard(page, expectedCard, theme.white, theme.softBorder);
+    page.drawCircle({ x: expectedCard.x + 18, y: expectedCard.y + expectedCard.height - 18, size: 5, color: hexToRgb(theme.green) });
+    drawLabel(page, 'RESULTADO ESPERADO', expectedCard.x + 30, expectedCard.y + expectedCard.height - 15, fonts.bold, theme.green, fonts.boldIsCustom, 8);
+    drawTextBox(page, content.expectedResult, fonts, theme, {
+      x: expectedCard.x + 14,
+      top: expectedCard.y + expectedCard.height - 30,
+      width: expectedCard.width - 28,
+      height: 34,
+      preferredSize: 8.5,
+      minimumSize: 7,
+      color: theme.darkText,
+      maxLines: 3,
+    });
+  }
 
   drawCard(page, resourceCard, theme.white, theme.softBorder);
   drawLabel(page, 'PÁGINA / RECURSO', resourceCard.x + 14, resourceCard.y + resourceCard.height - 15, fonts.bold, theme.gold, fonts.boldIsCustom, 8);
@@ -493,7 +498,24 @@ function shouldDrawHighlight(step: ResolvedManualStep, mode: NonNullable<ManualP
   if (mode === 'always') {
     return true;
   }
-  return step.annotationBaked === false;
+  return step.annotationBaked !== true;
+}
+
+function drawSelectionHighlight(
+  page: PDFPage,
+  highlight: ImagePlacement,
+  theme: ManualPdfTheme,
+): void {
+  page.drawRectangle({
+    ...highlight,
+    borderColor: hexToRgb(theme.white),
+    borderWidth: 3.4,
+  });
+  page.drawRectangle({
+    ...highlight,
+    borderColor: hexToRgb(theme.primaryRed),
+    borderWidth: 1.8,
+  });
 }
 
 function safeTextForFont(value: string, isCustom: boolean): string {

@@ -658,25 +658,9 @@ export class ManualBuilderRepository {
       const selectedAssetId = requestedFraming === 'context' && capture.contextAssetId !== null
         ? capture.contextAssetId
         : capture.originalAssetId;
-      const existingStepCount = await manager.count(ManualStepEntity, {
+      const nextOrder = (await manager.count(ManualStepEntity, {
         where: { versionId: version.id },
-      });
-
-      if (existingStepCount > 0) {
-        // Two phases avoid transient collisions with the unique (version_id, order) index.
-        await manager.createQueryBuilder()
-          .update(ManualStepEntity)
-          .set({ order: () => '"order" + 1000000' })
-          .where('version_id = :versionId', { versionId: version.id })
-          .execute();
-        await manager.createQueryBuilder()
-          .update(ManualStepEntity)
-          .set({ order: () => '"order" - 999999' })
-          .where('version_id = :versionId', { versionId: version.id })
-          .execute();
-      }
-
-      const nextOrder = 1;
+      })) + 1;
 
       const step = manager.create(ManualStepEntity, {
         id: randomUUID(),

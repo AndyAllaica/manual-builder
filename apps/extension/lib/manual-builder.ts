@@ -64,6 +64,8 @@ export interface ImageRedactionRegion {
   height: number;
 }
 
+export type CaptureTarget = 'element' | 'viewport';
+
 export interface CapturedSelectionRecord {
   id: string;
   createdAt: string;
@@ -71,6 +73,7 @@ export interface CapturedSelectionRecord {
   selectedElement: SelectedElementData;
   contextRegion: SelectionRect;
   redactionRegions: ImageRedactionRegion[];
+  captureTarget: CaptureTarget;
   tabId: number | null;
   windowId: number | null;
   remoteSessionId: string | null;
@@ -155,9 +158,14 @@ export interface ClearCapturesMessage {
   type: typeof MESSAGE_TYPE_CLEAR_CAPTURES;
 }
 
+export interface CaptureViewportRequestMessage {
+  type: typeof MESSAGE_TYPE_CAPTURE_VIEWPORT_REQUEST;
+}
+
 export const MESSAGE_TYPE_SELECTION_CAPTURED = 'manual-builder/selection-captured';
 export const MESSAGE_TYPE_GET_CAPTURE_MODE = 'manual-builder/get-capture-mode';
 export const MESSAGE_TYPE_CLEAR_CAPTURES = 'manual-builder/clear-captures';
+export const MESSAGE_TYPE_CAPTURE_VIEWPORT_REQUEST = 'manual-builder/capture-viewport-request';
 export const PANEL_STATE_STORAGE_KEY = 'manualBuilderPanelState';
 export const MANUAL_DRAFT_STORAGE_KEY = 'manualBuilderDraft';
 export const BACKEND_SYNC_SETTINGS_STORAGE_KEY = 'manualBuilderBackendSyncSettings';
@@ -225,6 +233,7 @@ export function createCapturedSelectionRecord(
   imageDataUrl: string,
   tabId: number | null,
   windowId: number | null,
+  captureTarget: CaptureTarget = 'element',
 ): CapturedSelectionRecord {
   return {
     id: crypto.randomUUID(),
@@ -233,6 +242,7 @@ export function createCapturedSelectionRecord(
     selectedElement,
     contextRegion: buildContextRegion(selectedElement),
     redactionRegions: [],
+    captureTarget,
     tabId,
     windowId,
     remoteSessionId: null,
@@ -268,6 +278,7 @@ export function createManualStep(input: {
     selectedElement: capture.selectedElement,
     contextRegion: capture.contextRegion,
     createdAt: new Date().toISOString(),
+    annotationBaked: capture.captureTarget === 'viewport',
     remoteManualId: capture.remoteManualId,
     remoteCaptureId: capture.remoteCaptureId,
     remoteSyncStatus: capture.remoteSyncStatus,
@@ -388,6 +399,11 @@ export function getImageExtension(format: ImageAssetFormat): string {
 }
 
 export function buildStepTitleSuggestion(capture: CapturedSelectionRecord): string {
+  if (capture.captureTarget === 'viewport') {
+    return sanitizeStepTitle(`Captura de pantalla - ${capture.selectedElement.pageTitle}`)
+      || 'Captura de pantalla';
+  }
+
   const candidate =
     clampText(capture.selectedElement.text, 56) ??
     clampText(capture.selectedElement.id, 32) ??
@@ -445,6 +461,10 @@ export function isGetCaptureModeMessage(value: unknown): value is GetCaptureMode
   return isRecord(value) && value.type === MESSAGE_TYPE_GET_CAPTURE_MODE;
 }
 
+export function isCaptureViewportRequestMessage(value: unknown): value is CaptureViewportRequestMessage {
+  return isRecord(value) && value.type === MESSAGE_TYPE_CAPTURE_VIEWPORT_REQUEST;
+}
+
 function buildFallbackStepTitle(step: ManualStep): string {
   for (const candidate of [step.selectedElement.text, step.pageTitle, step.selectedElement.tagName]) {
     if (candidate === null) {
@@ -463,6 +483,7 @@ function buildFallbackStepTitle(step: ManualStep): string {
 function normalizeCapturedSelectionRecord(capture: CapturedSelectionRecord): CapturedSelectionRecord {
   return {
     ...capture,
+    captureTarget: capture.captureTarget === 'viewport' ? 'viewport' : 'element',
     redactionRegions: normalizeImageRedactionRegions(capture.redactionRegions),
     remoteSessionId: normalizeNullableString(capture.remoteSessionId),
     remoteCaptureId: normalizeNullableString(capture.remoteCaptureId),
@@ -509,6 +530,7 @@ function normalizeManualStep(step: ManualStep): ManualStep {
   return {
     ...step,
     ...(normalizedGuide === undefined ? {} : { guide: normalizedGuide }),
+    annotationBaked: step.annotationBaked === true,
     remoteManualId: normalizeNullableString(step.remoteManualId),
     remoteCaptureId: normalizeNullableString(step.remoteCaptureId),
     remoteStepId: normalizeNullableString(step.remoteStepId),
@@ -608,7 +630,7 @@ function clampText(value: string | null, maxLength: number): string | null {
   return normalized.slice(0, maxLength);
 }
 
-function isSelectedElementData(value: unknown): value is SelectedElementData {
+export function isSelectedElementData(value: unknown): value is SelectedElementData {
   if (!isRecord(value)) {
     return false;
   }

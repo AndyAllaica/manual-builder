@@ -1,7 +1,9 @@
 import { defineContentScript } from '#imports';
 import {
   MESSAGE_TYPE_GET_CAPTURE_MODE,
+  MESSAGE_TYPE_CAPTURE_VIEWPORT_REQUEST,
   MESSAGE_TYPE_SELECTION_CAPTURED,
+  isCaptureViewportRequestMessage,
   type CaptureMode,
   type CaptureModeResponse,
   type SelectedElementData,
@@ -20,7 +22,7 @@ declare global {
 
 const LOADED_MESSAGE = '[Manual Builder] Extensión cargada. Presiona ALT + S para seleccionar.';
 const CONSOLE_GROUP_LABEL = '[Manual Builder] Elemento seleccionado';
-const ACTIVE_MESSAGE = 'Selector de manual activo | Clic para seleccionar | ESC para cancelar';
+const ACTIVE_MESSAGE = 'Selector activo | Clic para seleccionar | ALT + SHIFT + M captura la pantalla | ESC cancela';
 const OVERLAY_ID = 'manual-builder-selector-overlay';
 const BANNER_ID = 'manual-builder-selector-banner';
 const ROOT_ATTRIBUTE = 'data-manual-builder-selector-initialized';
@@ -28,6 +30,7 @@ const OWNED_ATTRIBUTE = 'data-manual-builder-owned';
 const GLOBAL_CONTROLLER_KEY = '__manualBuilderSelectorController__' as const;
 const MAX_TEXT_LENGTH = 300;
 const MAX_SELECTOR_DEPTH = 5;
+const BANNER_VISIBLE_MS = 2800;
 
 export default defineContentScript({
   matches: ['http://*/*', 'https://*/*'],
@@ -49,9 +52,11 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
   let overlayElement: HTMLDivElement | null = null;
   let bannerElement: HTMLDivElement | null = null;
   let captureMode: CaptureMode = 'review';
-  let pendingCaptureOnlyElement: HTMLElement | null = null;
   let captureSubmissionInFlight = false;
   let captureModeSyncInFlight: Promise<void> | null = null;
+  let bannerHideTimer: number | null = null;
+  let captureUiSuppressed = false;
+  let captureUiReleaseTimer: number | null = null;
 
   const mutationObserver = new MutationObserver(() => {
     hoveredElement = isUsableElement(hoveredElement) ? hoveredElement : null;
@@ -75,7 +80,7 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
       return;
     }
 
-    if (event.altKey && event.key.toLowerCase() === 's') {
+    if (event.altKey && !event.shiftKey && event.key.toLowerCase() === 's') {
       event.preventDefault();
       event.stopPropagation();
 
@@ -103,42 +108,21 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
     refreshOverlayForCurrentTarget();
   };
 
-  const handlePointerDownCapture = (event: PointerEvent): void => {
-    if (!selectionModeEnabled || captureMode !== 'capture-only' || !event.isTrusted || event.button !== 0) {
-      return;
-    }
-
-    const targetElement = resolveSelectableElement(doc, event.clientX, event.clientY);
-    if (targetElement === null) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-
-    pendingCaptureOnlyElement = targetElement;
-    selectedElement = targetElement;
-    hoveredElement = targetElement;
-    updateOverlay(targetElement);
-  };
-
   const handleClickCapture = (event: MouseEvent): void => {
     if (!event.isTrusted || !selectionModeEnabled) {
       return;
     }
 
     if (captureMode === 'capture-only') {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-
       if (captureSubmissionInFlight) {
         return;
       }
 
-      const targetElement = resolveSelectableElement(doc, event.clientX, event.clientY) ?? pendingCaptureOnlyElement;
-      pendingCaptureOnlyElement = null;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      const targetElement = resolveSelectableElement(doc, event.clientX, event.clientY);
       if (targetElement === null) {
         return;
       }
@@ -184,14 +168,26 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
     refreshOverlayForCurrentTarget();
   };
 
+  const handleRuntimeMessage = (message: unknown): SelectedElementData | undefined => {
+    if (!isCaptureViewportRequestMessage(message)) {
+      return undefined;
+    }
+
+    if (selectionModeEnabled) {
+      cancelSelectionMode();
+    }
+    suppressCaptureUi(1200);
+    return buildViewportSelectionData(win, doc);
+  };
+
   ensureUiElements();
   doc.documentElement.setAttribute(ROOT_ATTRIBUTE, 'true');
   void syncCaptureMode();
 
   doc.addEventListener('keydown', handleKeyDown, true);
   doc.addEventListener('mousemove', handleMouseMove, true);
-  doc.addEventListener('pointerdown', handlePointerDownCapture, true);
   doc.addEventListener('click', handleClickCapture, true);
+  browser.runtime.onMessage.addListener(handleRuntimeMessage);
   win.addEventListener('scroll', handleViewportChange, true);
   win.addEventListener('resize', handleViewportChange);
 
@@ -208,12 +204,13 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
 
       doc.removeEventListener('keydown', handleKeyDown, true);
       doc.removeEventListener('mousemove', handleMouseMove, true);
-      doc.removeEventListener('pointerdown', handlePointerDownCapture, true);
       doc.removeEventListener('click', handleClickCapture, true);
+      browser.runtime.onMessage.removeListener(handleRuntimeMessage);
       win.removeEventListener('scroll', handleViewportChange, true);
       win.removeEventListener('resize', handleViewportChange);
 
       mutationObserver.disconnect();
+      releaseCaptureUi();
       hideBanner();
       hideOverlay();
 
@@ -238,7 +235,6 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
     selectionModeEnabled = true;
     hoveredElement = null;
     selectedElement = null;
-    pendingCaptureOnlyElement = null;
 
     showBanner();
     hideOverlay();
@@ -247,7 +243,6 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
   function deactivateSelectionMode(options: { preserveSelection: boolean }): void {
     selectionModeEnabled = false;
     hoveredElement = null;
-    pendingCaptureOnlyElement = null;
     hideBanner();
 
     if (options.preserveSelection && isUsableElement(selectedElement)) {
@@ -271,15 +266,29 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
 
   function showBanner(): void {
     ensureUiElements();
-    if (bannerElement === null) {
+    if (bannerElement === null || captureUiSuppressed) {
       return;
     }
 
     bannerElement.textContent = ACTIVE_MESSAGE;
     bannerElement.style.display = 'block';
+    if (bannerHideTimer !== null) {
+      win.clearTimeout(bannerHideTimer);
+    }
+    bannerHideTimer = win.setTimeout(() => {
+      bannerHideTimer = null;
+      if (bannerElement !== null) {
+        bannerElement.style.display = 'none';
+      }
+    }, BANNER_VISIBLE_MS);
   }
 
   function hideBanner(): void {
+    if (bannerHideTimer !== null) {
+      win.clearTimeout(bannerHideTimer);
+      bannerHideTimer = null;
+    }
+
     if (bannerElement === null) {
       return;
     }
@@ -289,7 +298,8 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
 
   function updateOverlay(element: HTMLElement): void {
     ensureUiElements();
-    if (overlayElement === null) {
+    if (overlayElement === null || captureUiSuppressed) {
+      hideOverlay();
       return;
     }
 
@@ -315,6 +325,11 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
   }
 
   function refreshOverlayForCurrentTarget(): void {
+    if (captureUiSuppressed) {
+      hideOverlay();
+      return;
+    }
+
     const activeElement = selectionModeEnabled ? hoveredElement : selectedElement;
 
     if (!isUsableElement(activeElement)) {
@@ -330,21 +345,51 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
 
   async function submitSelectedElement(data: SelectedElementData): Promise<SelectionCapturedResponse> {
     logSelectedElement(data);
+    suppressCaptureUi();
 
-    const response = await notifySelectionCaptured(data);
-    if (!response.keepSelecting) {
-      return response;
-    }
-
-    win.setTimeout(() => {
-      if (selectionModeEnabled) {
-        return;
+    try {
+      const response = await notifySelectionCaptured(data);
+      if (!response.keepSelecting) {
+        return response;
       }
 
-      activateSelectionMode();
-    }, 180);
+      win.setTimeout(() => {
+        if (selectionModeEnabled) {
+          return;
+        }
 
-    return response;
+        activateSelectionMode();
+      }, 180);
+
+      return response;
+    } finally {
+      releaseCaptureUi();
+    }
+  }
+
+  function suppressCaptureUi(autoReleaseMs?: number): void {
+    captureUiSuppressed = true;
+    if (captureUiReleaseTimer !== null) {
+      win.clearTimeout(captureUiReleaseTimer);
+      captureUiReleaseTimer = null;
+    }
+    hideBanner();
+    hideOverlay();
+
+    if (autoReleaseMs !== undefined) {
+      captureUiReleaseTimer = win.setTimeout(releaseCaptureUi, autoReleaseMs);
+    }
+  }
+
+  function releaseCaptureUi(): void {
+    if (captureUiReleaseTimer !== null) {
+      win.clearTimeout(captureUiReleaseTimer);
+      captureUiReleaseTimer = null;
+    }
+    captureUiSuppressed = false;
+    if (selectionModeEnabled) {
+      refreshOverlayForCurrentTarget();
+    }
   }
 
   async function syncCaptureMode(): Promise<void> {
@@ -527,6 +572,28 @@ function buildSelectedElementData(
       y: rect.y,
       width: rect.width,
       height: rect.height,
+    },
+    viewport: {
+      width: win.innerWidth,
+      height: win.innerHeight,
+      devicePixelRatio: win.devicePixelRatio,
+    },
+  };
+}
+
+function buildViewportSelectionData(win: Window, doc: Document): SelectedElementData {
+  return {
+    tagName: 'html',
+    id: null,
+    text: null,
+    selector: 'html',
+    url: win.location.href,
+    pageTitle: doc.title,
+    rect: {
+      x: 0,
+      y: 0,
+      width: win.innerWidth,
+      height: win.innerHeight,
     },
     viewport: {
       width: win.innerWidth,

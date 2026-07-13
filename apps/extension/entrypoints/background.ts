@@ -1,12 +1,16 @@
 import {
   CAPTURE_IMAGE_FORMAT,
   CAPTURE_IMAGE_QUALITY,
+  MESSAGE_TYPE_CAPTURE_VIEWPORT_REQUEST,
   createCapturedSelectionRecord,
+  isCaptureViewportRequestMessage,
   isClearCapturesMessage,
   isGetCaptureModeMessage,
   isSelectionCapturedMessage,
+  isSelectedElementData,
   trimCapturesForStorage,
   type CapturePanelState,
+  type CaptureTarget,
   type ReviewSurface,
   type SelectedElementData,
   type SelectionCapturedResponse,
@@ -16,6 +20,8 @@ import { loadPanelState, savePanelState } from '../lib/panel-state';
 const SIDE_PANEL_PATH = 'sidepanel.html';
 const REVIEW_PAGE_PATH = '/sidepanel.html' as const;
 const CAPTURE_ERROR_PREFIX = '[Manual Builder] No se pudo generar la captura';
+const CAPTURE_VISIBLE_PAGE_COMMAND = 'capture-visible-page';
+const CAPTURE_UI_SETTLE_MS = 50;
 
 interface SidePanelApi {
   setPanelBehavior(options: { openPanelOnActionClick: boolean }): Promise<void>;
@@ -54,6 +60,12 @@ export default defineBackground({
       void handleActionClick(tab);
     });
 
+    browser.commands.onCommand.addListener((command) => {
+      if (command === CAPTURE_VISIBLE_PAGE_COMMAND) {
+        void enqueueCaptureTask(() => processViewportCaptureRequest({}));
+      }
+    });
+
     browser.runtime.onMessage.addListener((message, sender) => {
       if (isSelectionCapturedMessage(message)) {
         return enqueueCaptureTask(() => processSelection(message.payload, sender));
@@ -63,6 +75,10 @@ export default defineBackground({
         return loadPanelState().then((state) => ({
           captureMode: state.captureMode,
         }));
+      }
+
+      if (isCaptureViewportRequestMessage(message)) {
+        return enqueueCaptureTask(() => processViewportCaptureRequest(sender));
       }
 
       if (isClearCapturesMessage(message)) {
@@ -145,9 +161,10 @@ async function recoverPendingState(): Promise<void> {
 async function processSelection(
   selectedElement: SelectedElementData,
   sender: Browser.runtime.MessageSender,
+  captureTarget: CaptureTarget = 'element',
 ): Promise<SelectionCapturedResponse> {
   const currentState = await loadPanelState();
-  const keepSelecting = currentState.captureMode === 'capture-only';
+  const keepSelecting = captureTarget === 'element' && currentState.captureMode === 'capture-only';
   const initialReviewTarget = keepSelecting
     ? await sanitizeReviewTarget(currentState)
     : getAutomaticReviewTarget(currentState);
@@ -172,6 +189,7 @@ async function processSelection(
       imageDataUrl,
       sender.tab?.id ?? null,
       sender.tab?.windowId ?? null,
+      captureTarget,
     );
     activeReviewTarget = keepSelecting
       ? initialReviewTarget
@@ -208,6 +226,68 @@ async function processSelection(
 
     throw error;
   }
+}
+
+async function processViewportCaptureRequest(
+  sender: Browser.runtime.MessageSender,
+): Promise<SelectionCapturedResponse> {
+  const tab = sender.tab ?? (await browser.tabs.query({ active: true, currentWindow: true }))[0];
+  if (tab?.id === undefined) {
+    throw new Error('No se encontro una pestana activa para capturar.');
+  }
+
+  const selectedElement = await prepareViewportCapture(tab);
+
+  return processSelection(selectedElement, { ...sender, tab }, 'viewport');
+}
+
+async function prepareViewportCapture(tab: Browser.tabs.Tab): Promise<SelectedElementData> {
+  const fallbackSelection = createViewportFallbackSelection(tab);
+
+  if (tab.id === undefined) {
+    return fallbackSelection;
+  }
+
+  try {
+    const selectedElement = await browser.tabs.sendMessage(tab.id, {
+      type: MESSAGE_TYPE_CAPTURE_VIEWPORT_REQUEST,
+    });
+
+    if (!isSelectedElementData(selectedElement)) {
+      return fallbackSelection;
+    }
+
+    await new Promise<void>((resolve) => setTimeout(resolve, CAPTURE_UI_SETTLE_MS));
+    return selectedElement;
+  } catch {
+    // A newly installed extension or a restricted page may not have a content script.
+    return fallbackSelection;
+  }
+}
+
+function createViewportFallbackSelection(tab: Browser.tabs.Tab): SelectedElementData {
+  const viewportWidth = Math.max(1, tab.width ?? 1);
+  const viewportHeight = Math.max(1, tab.height ?? 1);
+
+  return {
+    tagName: 'html',
+    id: null,
+    text: null,
+    selector: 'html',
+    url: tab.url ?? tab.pendingUrl ?? '',
+    pageTitle: tab.title?.trim() || 'Pagina sin titulo',
+    rect: {
+      x: 0,
+      y: 0,
+      width: viewportWidth,
+      height: viewportHeight,
+    },
+    viewport: {
+      width: viewportWidth,
+      height: viewportHeight,
+      devicePixelRatio: 1,
+    },
+  };
 }
 
 async function handleActionClick(tab: Browser.tabs.Tab): Promise<void> {

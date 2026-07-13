@@ -79,11 +79,7 @@ export function resolveStepContent(step: ResolvedManualStep): ResolvedStepConten
     title: truncateText(title, 150),
     summary: truncateText(summary, 420),
     actions,
-    expectedResult: firstUsableText(
-      guide?.expectedResult,
-      inferExpectedResult(element),
-      'Verifique que la acción se haya completado correctamente.',
-    ),
+    expectedResult: truncateText(normalizeWhitespace(guide?.expectedResult), 600),
     detailCaption: firstUsableText(
       guide?.detailCaption,
       label ? `Detalle de ${label}` : undefined,
@@ -199,7 +195,7 @@ function normalizeGuide(guide: ManualStepGuide | undefined): Required<ManualStep
     title: isUsableInstructionText(guide.title) ? normalizeWhitespace(guide.title) : '',
     summary: isUsableInstructionText(guide.summary) ? normalizeWhitespace(guide.summary) : '',
     actions,
-    expectedResult: isUsableInstructionText(guide.expectedResult) ? normalizeWhitespace(guide.expectedResult) : '',
+    expectedResult: truncateText(normalizeWhitespace(guide.expectedResult), 600),
     detailCaption: isUsableInstructionText(guide.detailCaption) ? normalizeWhitespace(guide.detailCaption) : '',
   };
 
@@ -218,20 +214,6 @@ function resolveElementLabel(element: CompatibleSelectedElement, step: ResolvedM
     step.selector,
     '',
   );
-}
-
-function inferExpectedResult(element: CompatibleSelectedElement): string {
-  const tagName = normalizeWhitespace(element.tagName).toLowerCase();
-  if (tagName === 'a') {
-    return 'La página o recurso correspondiente debe abrirse correctamente.';
-  }
-  if (tagName === 'button') {
-    return 'El sistema debe procesar la acción solicitada.';
-  }
-  if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') {
-    return 'El valor seleccionado o ingresado debe quedar visible en el campo.';
-  }
-  return 'La información indicada debe mostrarse de forma correcta.';
 }
 
 function firstUsableText(...values: unknown[]): string {

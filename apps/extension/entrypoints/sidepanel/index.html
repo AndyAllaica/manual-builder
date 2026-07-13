@@ -13,12 +13,15 @@
         <p class="hero-kicker">Manual Builder</p>
         <h1>Constructor del manual</h1>
         <p class="hero-copy">
-          Captura elementos con <strong>ALT + S</strong>, confirma los que sirven y arma el manual
-          paso a paso sin salir de la extension.
+          Captura elementos con <strong>ALT + S</strong> o la pantalla visible con
+          <strong>ALT + SHIFT + M</strong>, y arma el manual paso a paso.
         </p>
         <div class="hero-actions">
           <span id="status-badge" class="status-badge">Sin actividad</span>
           <div class="hero-controls">
+            <button id="capture-viewport-button" class="clear-button" type="button">
+              Capturar pantalla
+            </button>
             <button id="toggle-capture-mode-button" class="clear-button" type="button">
               Solo captura: no
             </button>
@@ -339,7 +342,7 @@
               </label>
 
               <label class="field">
-                <span class="field-label">Resultado esperado</span>
+                <span class="field-label">Resultado esperado (opcional)</span>
                 <textarea
                   id="step-expected-result-input"
                   class="field-textarea"

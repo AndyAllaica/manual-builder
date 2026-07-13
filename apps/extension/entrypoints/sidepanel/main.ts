@@ -2,6 +2,7 @@ import {
   BACKEND_SYNC_SETTINGS_STORAGE_KEY,
   MANUAL_DRAFT_STORAGE_KEY,
   MESSAGE_TYPE_CLEAR_CAPTURES,
+  MESSAGE_TYPE_CAPTURE_VIEWPORT_REQUEST,
   PANEL_STATE_STORAGE_KEY,
   buildStepTitleSuggestion,
   createEmptyBackendSyncSettings,
@@ -139,6 +140,7 @@ let collaboratorRoleDraft: RemoteWorkspaceMemberRole = 'editor';
 const captureImageCache = new Map<string, Promise<HTMLImageElement>>();
 
 const statusBadge = queryElement<HTMLSpanElement>('status-badge');
+const captureViewportButton = queryElement<HTMLButtonElement>('capture-viewport-button');
 const toggleCaptureModeButton = queryElement<HTMLButtonElement>('toggle-capture-mode-button');
 const clearCapturesButton = queryElement<HTMLButtonElement>('clear-captures-button');
 const summaryTitle = queryElement<HTMLParagraphElement>('summary-title');
@@ -225,6 +227,10 @@ const openPrintViewButton = queryElement<HTMLButtonElement>('open-print-view-but
 void initializeSidePanel();
 
 async function initializeSidePanel(): Promise<void> {
+  captureViewportButton.addEventListener('click', () => {
+    void runPanelAction(handleCaptureViewport);
+  });
+
   toggleCaptureModeButton.addEventListener('click', () => {
     void runPanelAction(handleToggleCaptureMode);
   });
@@ -522,7 +528,7 @@ async function refreshState(): Promise<void> {
     selectedCaptureId === null ||
     !currentState.captures.some((capture) => capture.id === selectedCaptureId)
   ) {
-    selectedCaptureId = currentState.captures[0]?.id ?? null;
+    selectedCaptureId = currentState.captures.at(-1)?.id ?? null;
   }
 
   if (
@@ -826,7 +832,9 @@ function renderCapturePreview(selectedCapture: CapturedSelectionRecord | null): 
   previewSection.hidden = false;
   captureHeading.textContent = selectedCapture.selectedElement.pageTitle || 'Pagina sin titulo';
   captureTime.textContent = formatTimestamp(selectedCapture.createdAt);
-  previewCaption.textContent = getPreviewCaption('full');
+  previewCaption.textContent = selectedCapture.captureTarget === 'viewport'
+    ? 'Captura de la pantalla visible completa, sin selector ni resaltado de elemento.'
+    : getPreviewCaption('full');
   detailTag.textContent = selectedCapture.selectedElement.tagName;
   detailId.textContent = selectedCapture.selectedElement.id ?? 'Sin ID';
   detailSelector.textContent = selectedCapture.selectedElement.selector;
@@ -834,7 +842,7 @@ function renderCapturePreview(selectedCapture: CapturedSelectionRecord | null): 
   detailPage.textContent = selectedCapture.selectedElement.url;
   detailRect.textContent = formatRect(selectedCapture.selectedElement.rect);
   detailViewport.textContent = formatViewport(selectedCapture);
-  detailSurface.textContent = `${formatReviewSurface(currentState.reviewSurface)} | ${formatRemoteSyncStatus(selectedCapture.remoteSyncStatus)}`;
+  detailSurface.textContent = `${selectedCapture.captureTarget === 'viewport' ? 'Pantalla visible' : formatReviewSurface(currentState.reviewSurface)} | ${formatRemoteSyncStatus(selectedCapture.remoteSyncStatus)}`;
   confirmCaptureButton.disabled = panelBusy;
   discardCaptureButton.disabled = panelBusy;
   const regionCount = selectedCapture.redactionRegions.length;
@@ -870,7 +878,7 @@ function renderCaptureQueue(selectedCapture: CapturedSelectionRecord | null): vo
 
   const fragment = document.createDocumentFragment();
 
-  for (const capture of currentState.captures) {
+  for (const capture of [...currentState.captures].reverse()) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = capture.id === selectedCapture?.id ? 'history-item is-active' : 'history-item';
@@ -1067,6 +1075,7 @@ function renderExportState(): void {
   clearManualButton.disabled = !hasSteps || panelBusy;
   openPrintViewButton.disabled = !hasSteps || panelBusy;
   saveManualMetaButton.disabled = panelBusy || !manualMetaDirty;
+  captureViewportButton.disabled = panelBusy || currentState.status === 'capturing';
   clearCapturesButton.disabled =
     (currentState.captures.length === 0 && currentState.pendingSelection === null) || panelBusy;
 }
@@ -1105,6 +1114,23 @@ async function drawPreview(
     clearPreviewCanvas();
     previewCaption.textContent = `No se pudo dibujar la vista previa: ${getErrorMessage(error)}`;
   }
+}
+
+async function handleCaptureViewport(): Promise<void> {
+  try {
+    await browser.runtime.sendMessage({ type: MESSAGE_TYPE_CAPTURE_VIEWPORT_REQUEST });
+  } catch (error) {
+    const panelState = await loadPanelState();
+    await savePanelState({
+      ...panelState,
+      status: 'error',
+      pendingSelection: null,
+      lastError: getErrorMessage(error),
+      lastUpdatedAt: new Date().toISOString(),
+    });
+  }
+
+  await refreshState();
 }
 
 async function handleToggleCaptureMode(): Promise<void> {
@@ -1261,7 +1287,7 @@ async function handleConfirmSelectedCapture(): Promise<void> {
     redactionRegions: [],
   };
   const contextAsset = await createContextImageAsset(protectedCapture);
-  const nextOrder = 1;
+  const nextOrder = manualDraft.steps.length + 1;
   const localStep = createManualStep({
     capture: protectedCapture,
     order: nextOrder,
@@ -1278,7 +1304,7 @@ async function handleConfirmSelectedCapture(): Promise<void> {
 
   await saveManualDraft({
     ...manualDraft,
-    steps: [nextStep, ...manualDraft.steps],
+    steps: [...manualDraft.steps, nextStep],
   });
 
   await savePanelState(removeCaptureFromState(panelState, capture.id));
@@ -2337,7 +2363,7 @@ async function syncConfirmedStepToBackend(
       ...buildRemoteCapturePayload(capture.selectedElement, capture.imageDataUrl, step.title),
       description: step.description,
       framing: DEFAULT_REMOTE_FRAMING,
-      contextImageDataUrl: contextAsset.dataUrl,
+      contextImageDataUrl: capture.captureTarget === 'viewport' ? null : contextAsset.dataUrl,
     });
     remoteCaptureId = createdCapture.capture.id;
 
@@ -2504,6 +2530,13 @@ async function createRedactedOriginalImageAsset(
 async function createContextImageAsset(
   capture: CapturedSelectionRecord,
 ): Promise<GeneratedImageAsset> {
+  if (capture.captureTarget === 'viewport') {
+    return {
+      dataUrl: capture.imageDataUrl,
+      format: detectImageFormatFromDataUrl(capture.imageDataUrl),
+    };
+  }
+
   const image = await loadCaptureImage(capture.imageDataUrl);
   const detachedCanvas = document.createElement('canvas');
   drawCapturePreviewToCanvas(detachedCanvas, image, capture, 'context');
@@ -2823,6 +2856,10 @@ function drawCapturePreviewToCanvas(
     redactionRegions,
   );
 
+  if (capture.captureTarget === 'viewport') {
+    return;
+  }
+
   const drawScaleX = drawWidth / sourceRect.width;
   const drawScaleY = drawHeight / sourceRect.height;
   const highlightRect = {
@@ -2970,7 +3007,10 @@ function drawOutsideMask(
 }
 
 function drawHighlight(context: CanvasRenderingContext2D, highlightRect: PixelRect): void {
-  const borderWidth = Math.max(2, Math.round(Math.min(highlightRect.width, highlightRect.height) * 0.03));
+  const borderWidth = Math.max(
+    3,
+    Math.min(10, Math.round(Math.min(highlightRect.width, highlightRect.height) * 0.03)),
+  );
   const inset = borderWidth / 2;
 
   context.save();
@@ -3112,7 +3152,7 @@ function removeCaptureFromState(
 
 function getNextCaptureId(captures: CapturedSelectionRecord[], removedCaptureId: string): string | null {
   const remainingCaptures = captures.filter((capture) => capture.id !== removedCaptureId);
-  return remainingCaptures[0]?.id ?? null;
+  return remainingCaptures.at(-1)?.id ?? null;
 }
 
 function formatTimestamp(isoDate: string): string {

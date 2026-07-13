@@ -10,7 +10,7 @@ Este paquete contiene la extension **Manual Builder** en su etapa actual. Permit
 - Capturar la pestana visible.
 - Revisar siempre la captura de pantalla completa; el recorte contextual se conserva como detalle auxiliar.
 - Confirmar o descartar capturas antes de guardarlas.
-- Construir una lista de pasos con titulo, descripcion y resultado esperado editables.
+- Construir una lista de pasos con titulo, descripcion y resultado esperado opcional.
 - Reordenar, eliminar y exportar pasos localmente.
 - Sincronizar las capturas confirmadas con el backend NestJS despues de iniciar sesion y seleccionar una accion.
 - Iniciar sesion con usuario/contrasena simple contra el backend.
@@ -91,9 +91,13 @@ pnpm build:firefox
 ## 6. Controles disponibles
 
 - `ALT + S`: activar o desactivar el selector.
+- `ALT + SHIFT + M`: capturar la pantalla visible sin seleccionar un elemento.
+- `Capturar pantalla`: ejecutar la misma captura completa desde el panel.
 - `Clic`: seleccionar el elemento resaltado y capturar la pestana visible.
 - `ESC`: cancelar la seleccion.
 - `Icono de la extension`: abrir la superficie de revision manualmente.
+
+Edge reserva `ALT + SHIFT + S` para su propia herramienta. Manual Builder usa `ALT + SHIFT + M`; el atajo se puede consultar o reasignar en `edge://extensions/shortcuts`.
 - `Agregar al manual`: convertir la captura actual en un paso persistente.
 - `Descartar captura`: eliminar la captura pendiente sin guardarla.
 - `Guardar cambios`: actualizar titulo y descripcion del paso seleccionado.
@@ -122,7 +126,7 @@ pnpm build:firefox
 ```
 
 2. Al presionar `ALT + S`, aparece el aviso flotante del selector.
-3. Mientras el selector esta activo, el elemento bajo el cursor se resalta con un overlay fijo.
+3. El aviso se oculta automaticamente despues de 2.8 segundos. Mientras el selector sigue activo, el elemento bajo el cursor se resalta.
 4. Al hacer clic, la extension bloquea la accion normal del elemento y genera `SelectedElementData`.
 5. El content script envia la seleccion al service worker.
 6. El service worker captura primero la pestana visible y solo despues abre la superficie de revision.
@@ -134,6 +138,7 @@ pnpm build:firefox
    - Al confirmar, se envian juntos el original completo y el recorte contextual.
    - Si existe un manual remoto seleccionado, la misma confirmacion crea tambien el paso remoto.
 8. La interfaz de revision permite:
+   - Revisar las capturas desde la mas antigua hasta la mas reciente.
    - Ver la captura completa con el elemento resaltado.
    - Marcar una o varias zonas sensibles para difuminarlas de forma irreversible.
    - Confirmarla y crear un `ManualStep`.
@@ -164,6 +169,12 @@ pnpm build:firefox
 ### Modo Solo captura
 
 El boton `Solo captura` mantiene el selector activo para registrar varias acciones consecutivas. En este modo cada clic se intercepta, se captura primero la pestana visible y solo despues se reproduce el clic real del elemento. `ESC` termina la seleccion continua.
+
+El modo continuo no bloquea `pointerdown`, escritura, desplazamiento ni arrastre. Solo retrasa el clic que se esta capturando; los clics adicionales durante una captura pasan normalmente al sitio y no se agregan a la cola.
+
+### Captura sin elemento
+
+El boton `Capturar pantalla` y el atajo `ALT + SHIFT + M` guardan la pestana visible completa sin selector, mascara ni resaltado. Antes de capturar se ocultan todos los componentes visuales propiedad de la extension cuando la pagina permite ejecutar el content script.
 
 ### Comportamiento por navegador
 
@@ -218,7 +229,7 @@ La ausencia de estos archivos no bloquea la exportacion. Se utiliza Helvetica co
 - La autenticacion es simple con usuario/contrasena; no es CAS ni OIDC.
 - No hay pantalla administrativa completa para usuarios; el alta se hace desde el panel o por API.
 - Al cargar un manual remoto, la extension reemplaza el borrador local actual.
-- La edicion remota actual sincroniza titulo y descripcion; eliminar o reordenar pasos sigue siendo local.
+- La edicion remota actual sincroniza titulo, descripcion y resultado esperado; eliminar o reordenar pasos sigue siendo local.
 - El almacenamiento remoto depende de que la API este ejecutandose con `ASSET_STORAGE_PROVIDER=onedrive-business`.
 - No se generan archivos DOCX.
 - Firefox puede mostrar advertencias de build relacionadas con distribucion, aunque el flujo local sigue funcionando.

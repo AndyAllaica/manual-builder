@@ -10,6 +10,14 @@ export default defineConfig({
     action: {
       default_title: 'Manual Builder',
     },
+    commands: {
+      'capture-visible-page': {
+        suggested_key: {
+          default: 'Alt+Shift+M',
+        },
+        description: 'Capturar la pantalla visible sin seleccionar un elemento',
+      },
+    },
     browser_specific_settings: {
       gecko: {
         id: 'manual-builder@local',
