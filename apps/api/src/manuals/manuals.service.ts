@@ -57,6 +57,9 @@ export class ManualsService {
     const steps = await Promise.all((await this.repository.listManualStepsByVersionId(currentVersion.id)).map(async (step) => ({
       ...step,
       asset: await this.repository.findAssetById(step.assetId),
+      sourceCapture: step.sourceCaptureId === null
+        ? null
+        : await this.getStepSourceCaptureWithAssets(step.sourceCaptureId),
     })));
 
     return {
@@ -107,5 +110,15 @@ export class ManualsService {
     );
 
     return this.repository.deleteManualStep(stepId);
+  }
+
+  private async getStepSourceCaptureWithAssets(captureId: string) {
+    const capture = await this.repository.findCaptureById(captureId);
+
+    return {
+      ...capture,
+      originalAsset: await this.repository.findAssetById(capture.originalAssetId),
+      contextAsset: capture.contextAssetId === null ? null : await this.repository.findAssetById(capture.contextAssetId),
+    };
   }
 }

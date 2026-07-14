@@ -87,7 +87,7 @@ interface ExportedManualDocument {
 }
 
 const MANUAL_PAGE_PATH = '/manual.html' as const;
-const DEFAULT_REMOTE_FRAMING = 'full' as const;
+const DEFAULT_REMOTE_FRAMING = 'context' as const;
 const STORED_IMAGE_QUALITY = 0.95;
 const CONTEXT_IMAGE_QUALITY = 0.94;
 
@@ -2118,7 +2118,14 @@ async function buildManualStepFromRemoteStep(
   manualId: string,
   apiBaseUrl: string,
 ): Promise<ManualStep> {
-  const imageAsset = await fetchRemoteAssetAsImageAsset(remoteStep.asset, apiBaseUrl);
+  const originalAsset = await fetchRemoteAssetAsImageAsset(
+    remoteStep.sourceCapture?.originalAsset ?? remoteStep.asset,
+    apiBaseUrl,
+  );
+  const contextAsset = await fetchRemoteAssetAsImageAsset(
+    remoteStep.sourceCapture?.contextAsset ?? remoteStep.asset,
+    apiBaseUrl,
+  );
   const selectedElement = buildSelectedElementFromRemoteStep(remoteStep);
 
   return {
@@ -2132,10 +2139,10 @@ async function buildManualStepFromRemoteStep(
     selector: remoteStep.selector,
     url: remoteStep.pageUrl,
     pageTitle: remoteStep.pageTitle,
-    imageOriginalDataUrl: imageAsset.dataUrl,
-    imageOriginalFormat: imageAsset.format,
-    imageContextDataUrl: imageAsset.dataUrl,
-    imageContextFormat: imageAsset.format,
+    imageOriginalDataUrl: originalAsset.dataUrl,
+    imageOriginalFormat: originalAsset.format,
+    imageContextDataUrl: contextAsset.dataUrl,
+    imageContextFormat: contextAsset.format,
     selectedElement,
     contextRegion: selectedElement.rect,
     createdAt: remoteStep.createdAt,

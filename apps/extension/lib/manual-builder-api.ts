@@ -278,6 +278,10 @@ export interface RemoteActionRecord {
 
 export type RemoteManualStepWithAsset = RemoteManualStepRecord & {
   asset: RemoteAssetRecord;
+  sourceCapture: (RemoteCaptureRecord & {
+    originalAsset: RemoteAssetRecord;
+    contextAsset: RemoteAssetRecord | null;
+  }) | null;
 };
 
 export interface RemoteManualDetail {
@@ -497,7 +501,7 @@ export function buildRemoteCapturePayload(
     textSnippet: selectedElement.text,
     title,
     description: '',
-    framing: 'full',
+    framing: 'context',
     originalImageDataUrl: imageDataUrl,
   };
 }
