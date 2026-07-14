@@ -236,7 +236,7 @@ function createSelectorController(win: Window, doc: Document): SelectorControlle
     hoveredElement = null;
     selectedElement = null;
 
-    showBanner();
+    //showBanner();
     hideOverlay();
   }
 

@@ -27,6 +27,7 @@ export class AppController {
         '/api/v1/manuals/action/:actionId',
         '/api/v1/manuals/:manualId',
         '/api/v1/manuals/:manualId/steps/from-capture',
+        '/api/v1/manuals/steps/:stepId',
         '/api/v1/capture-sessions',
         '/api/v1/capture-sessions/:sessionId',
         '/api/v1/capture-sessions/:sessionId/captures',

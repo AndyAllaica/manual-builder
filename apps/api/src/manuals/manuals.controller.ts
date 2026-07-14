@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SimpleAuthGuard } from '../auth/simple-auth.guard';
 import { type AuthenticatedUser } from '../auth/auth.types';
@@ -52,5 +52,13 @@ export class ManualsController {
     @Body() body: UpdateManualStepDto,
   ) {
     return this.manualsService.updateManualStep(user, stepId, body);
+  }
+
+  @Delete('steps/:stepId')
+  deleteManualStep(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('stepId') stepId: string,
+  ) {
+    return this.manualsService.deleteManualStep(user, stepId);
   }
 }

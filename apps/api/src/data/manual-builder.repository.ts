@@ -31,6 +31,7 @@ import {
   type CreateSystemModuleInput,
   type CreateUserInput,
   type CreateWorkspaceInput,
+  type DeleteManualStepResult,
   type ManualRecord,
   type ManualStepRecord,
   type ManualVersionRecord,
@@ -739,6 +740,63 @@ export class ManualBuilderRepository {
       await manager.save(manual);
 
       return toManualStepRecord(step);
+    });
+  }
+
+  async deleteManualStep(stepId: string): Promise<DeleteManualStepResult> {
+    return this.dataSource.transaction(async (manager) => {
+      const step = await manager.findOne(ManualStepEntity, {
+        where: { id: stepId },
+      });
+
+      if (step === null) {
+        throw new NotFoundException(`Paso del manual no encontrado: ${stepId}`);
+      }
+
+      const version = await manager.findOne(ManualVersionEntity, {
+        where: { id: step.versionId },
+      });
+      if (version === null) {
+        throw new NotFoundException(`Version no encontrada: ${step.versionId}`);
+      }
+
+      const manual = await manager.findOne(ManualEntity, {
+        where: { id: version.manualId },
+      });
+      if (manual === null) {
+        throw new NotFoundException(`Manual no encontrado: ${version.manualId}`);
+      }
+
+      const deletedOrder = step.order;
+      await manager.delete(ManualStepEntity, { id: step.id });
+
+      const remainingSteps = await manager.find(ManualStepEntity, {
+        where: { versionId: version.id },
+        order: { order: 'ASC' },
+      });
+
+      for (const [index, remainingStep] of remainingSteps.entries()) {
+        const nextOrder = index + 1;
+        if (remainingStep.order === nextOrder) {
+          continue;
+        }
+
+        remainingStep.order = nextOrder;
+        await manager.save(remainingStep);
+      }
+
+      version.updatedAt = new Date();
+      manual.updatedAt = new Date();
+      await manager.save(version);
+      await manager.save(manual);
+
+      return {
+        stepId: step.id,
+        manualId: manual.id,
+        versionId: version.id,
+        deletedOrder,
+        remainingStepCount: remainingSteps.length,
+      };
     });
   }
 

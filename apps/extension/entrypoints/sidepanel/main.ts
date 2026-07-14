@@ -1448,6 +1448,8 @@ async function handleDeleteSelectedStep(): Promise<void> {
     return;
   }
 
+  await deleteRemoteStepIfNeeded(selectedStep);
+
   const nextSteps = manualDraft.steps.filter((step) => step.id !== selectedStep.id);
   const fallbackStep = nextSteps[currentIndex] ?? nextSteps[currentIndex - 1] ?? null;
 
@@ -2479,6 +2481,36 @@ async function syncEditedStepToBackend(step: ManualStep): Promise<ManualStep> {
       remoteSyncStatus: 'error',
       remoteSyncError: syncError,
     };
+  }
+}
+
+async function deleteRemoteStepIfNeeded(step: ManualStep): Promise<void> {
+  if (step.remoteStepId === null || step.remoteStepId === undefined) {
+    return;
+  }
+
+  const settings = await loadBackendSyncSettings();
+  if (settings.apiBaseUrl.trim().length === 0 || settings.authToken === null) {
+    throw new Error('No se puede eliminar el paso remoto porque no hay sesion activa con el backend.');
+  }
+
+  try {
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    await client.deleteManualStep(step.remoteStepId);
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      lastError: null,
+    });
+  } catch (error) {
+    const syncError = getErrorMessage(error);
+
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: syncError,
+    });
+
+    throw new Error(`No se pudo eliminar el paso remoto: ${syncError}`);
   }
 }
 

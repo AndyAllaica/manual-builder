@@ -236,3 +236,11 @@ export interface UpdateManualStepInput {
   description?: string;
   expectedResult?: string;
 }
+
+export interface DeleteManualStepResult {
+  stepId: string;
+  manualId: string;
+  versionId: string;
+  deletedOrder: number;
+  remainingStepCount: number;
+}

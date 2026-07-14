@@ -244,6 +244,8 @@ http://localhost:3001/uploads/
 - `GET /api/v1/manuals/action/:actionId`
 - `GET /api/v1/manuals/:manualId`
 - `POST /api/v1/manuals/:manualId/steps/from-capture`
+- `PATCH /api/v1/manuals/steps/:stepId`
+- `DELETE /api/v1/manuals/steps/:stepId`
 
 ### Sesiones de captura
 

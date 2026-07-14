@@ -99,4 +99,13 @@ export class ManualsService {
       asset: await this.repository.findAssetById(step.assetId),
     };
   }
+
+  async deleteManualStep(user: AuthenticatedUser, stepId: string) {
+    await this.repository.ensureUserCanEditWorkspace(
+      user.id,
+      await this.repository.getWorkspaceIdByManualStepId(stepId),
+    );
+
+    return this.repository.deleteManualStep(stepId);
+  }
 }

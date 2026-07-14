@@ -222,6 +222,14 @@ export interface UpdateRemoteManualStepInput {
   expectedResult?: string;
 }
 
+export interface DeleteRemoteManualStepResponse {
+  stepId: string;
+  manualId: string;
+  versionId: string;
+  deletedOrder: number;
+  remainingStepCount: number;
+}
+
 export interface RemoteAssetRecord {
   id: string;
   provider: string;
@@ -335,6 +343,7 @@ export interface ManualBuilderApiClient {
     stepId: string,
     input: UpdateRemoteManualStepInput,
   ): Promise<AddRemoteStepResponse>;
+  deleteManualStep(stepId: string): Promise<DeleteRemoteManualStepResponse>;
 }
 
 export function createManualBuilderApiClient(apiBaseUrl: string, authToken?: string | null): ManualBuilderApiClient {
@@ -460,6 +469,15 @@ export function createManualBuilderApiClient(apiBaseUrl: string, authToken?: str
         {
           method: 'PATCH',
           body: JSON.stringify(input),
+        },
+        authToken,
+      ),
+    deleteManualStep: (stepId) =>
+      requestJson<DeleteRemoteManualStepResponse>(
+        baseUrl,
+        `/manuals/steps/${encodeURIComponent(stepId)}`,
+        {
+          method: 'DELETE',
         },
         authToken,
       ),
