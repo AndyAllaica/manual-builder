@@ -86,6 +86,13 @@ interface ExportedManualDocument {
   steps: ManualStep[];
 }
 
+interface ManualDraftSeed {
+  title?: string | null;
+  author?: string | null;
+  description?: string | null;
+  createdAt?: string | null;
+}
+
 const MANUAL_PAGE_PATH = '/manual.html' as const;
 const DEFAULT_REMOTE_FRAMING = 'context' as const;
 const STORED_IMAGE_QUALITY = 0.95;
@@ -268,6 +275,7 @@ async function initializeSidePanel(): Promise<void> {
     backendManuals = [];
     backendSettingsDirty = true;
     void runPanelAction(async () => {
+      await resetVisibleManualDraftForRemoteContext();
       await loadBackendCatalogForDraft();
       await persistBackendSettingsDraft();
     });
@@ -282,6 +290,7 @@ async function initializeSidePanel(): Promise<void> {
     backendSettingsDirty = true;
     renderBackendSyncSection();
     void runPanelAction(async () => {
+      await resetVisibleManualDraftForRemoteContext();
       await persistBackendSettingsDraft();
     });
   });
@@ -294,6 +303,7 @@ async function initializeSidePanel(): Promise<void> {
     backendSettingsDirty = true;
     renderBackendSyncSection();
     void runPanelAction(async () => {
+      await resetVisibleManualDraftForRemoteContext();
       await persistBackendSettingsDraft();
     });
   });
@@ -303,6 +313,7 @@ async function initializeSidePanel(): Promise<void> {
     backendManualIdDraft = '';
     backendSettingsDirty = true;
     void runPanelAction(async () => {
+      await resetVisibleManualDraftForRemoteContext();
       await loadManualsForSelectedAction();
       await persistBackendSettingsDraft();
     });
@@ -313,6 +324,7 @@ async function initializeSidePanel(): Promise<void> {
     backendSettingsDirty = true;
     renderBackendSyncSection();
     void runPanelAction(async () => {
+      await resetVisibleManualDraftForRemoteContext(buildManualDraftSeedFromSummary(getSelectedRemoteManual()));
       await persistBackendSettingsDraft();
     });
   });
@@ -1560,6 +1572,29 @@ async function handleClearManualDraft(): Promise<void> {
   await refreshState();
 }
 
+async function resetVisibleManualDraftForRemoteContext(seed: ManualDraftSeed | null = null): Promise<void> {
+  const fallbackDraft = createEmptyManualDraft();
+
+  await persistPendingEditsIfNeeded();
+
+  selectedStepId = null;
+  stepFormStepId = null;
+  stepFormTitle = '';
+  stepFormDescription = '';
+  stepFormExpectedResult = '';
+  stepFormDirty = false;
+  manualMetaDirty = false;
+
+  await saveManualDraft({
+    title: sanitizeManualTitle(seed?.title ?? '') || fallbackDraft.title,
+    author: sanitizeManualAuthor(seed?.author ?? ''),
+    description: sanitizeManualDescription(seed?.description ?? ''),
+    createdAt: normalizeSeedDate(seed?.createdAt) ?? fallbackDraft.createdAt,
+    steps: [],
+    lastUpdatedAt: null,
+  });
+}
+
 async function handleSaveManualMetadata(): Promise<void> {
   const manualDraft = await loadManualDraft();
 
@@ -1734,6 +1769,7 @@ async function handleCreateRemoteWorkspace(): Promise<void> {
       lastValidatedAt: new Date().toISOString(),
       lastError: null,
     });
+    await resetVisibleManualDraftForRemoteContext();
   } catch (error) {
     await saveBackendSyncSettings({
       ...settings,
@@ -1784,6 +1820,7 @@ async function handleCreateRemoteSystem(): Promise<void> {
       sessionActionId: null,
       lastError: null,
     });
+    await resetVisibleManualDraftForRemoteContext();
   } catch (error) {
     await saveBackendSyncSettings({
       ...settings,
@@ -1831,6 +1868,7 @@ async function handleCreateRemoteModule(): Promise<void> {
       sessionActionId: null,
       lastError: null,
     });
+    await resetVisibleManualDraftForRemoteContext();
   } catch (error) {
     await saveBackendSyncSettings({
       ...settings,
@@ -1878,6 +1916,7 @@ async function handleCreateRemoteAction(): Promise<void> {
       sessionActionId: null,
       lastError: null,
     });
+    await resetVisibleManualDraftForRemoteContext();
   } catch (error) {
     await saveBackendSyncSettings({
       ...settings,
@@ -1921,6 +1960,12 @@ async function handleCreateRemoteManual(): Promise<void> {
 
     backendManualIdDraft = manual.id;
     await loadManualsForSelectedAction();
+    await resetVisibleManualDraftForRemoteContext({
+      title: manual.title,
+      author: manual.createdBy,
+      description: manual.description,
+      createdAt: manual.createdAt,
+    });
   } catch (error) {
     await saveBackendSyncSettings({
       ...settings,
@@ -2341,6 +2386,19 @@ function getSelectedRemoteAction(): RemoteActionSummary | null {
 
 function getSelectedRemoteManual(): RemoteManualSummary | null {
   return backendManuals.find((manual) => manual.id === backendManualIdDraft) ?? null;
+}
+
+function buildManualDraftSeedFromSummary(manual: RemoteManualSummary | null): ManualDraftSeed | null {
+  if (manual === null) {
+    return null;
+  }
+
+  return {
+    title: manual.title,
+    author: manual.createdBy,
+    description: manual.description,
+    createdAt: manual.createdAt,
+  };
 }
 
 async function syncConfirmedStepToBackend(
@@ -3192,6 +3250,11 @@ function removeCaptureFromState(
 function getNextCaptureId(captures: CapturedSelectionRecord[], removedCaptureId: string): string | null {
   const remainingCaptures = captures.filter((capture) => capture.id !== removedCaptureId);
   return remainingCaptures.at(-1)?.id ?? null;
+}
+
+function normalizeSeedDate(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized !== undefined && normalized.length > 0 ? normalized : null;
 }
 
 function formatTimestamp(isoDate: string): string {
