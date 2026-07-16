@@ -10,7 +10,7 @@ Este paquete contiene la extension **Manual Builder** en su etapa actual. Permit
 - Capturar la pestana visible.
 - Revisar siempre la captura de pantalla completa; el recorte contextual se conserva como detalle auxiliar.
 - Confirmar o descartar capturas antes de guardarlas.
-- Construir una lista de pasos con titulo, descripcion y resultado esperado opcional.
+- Construir una lista de pasos con titulo, descripcion multilinea y resultado esperado opcional.
 - Reordenar, eliminar y exportar pasos localmente.
 - Sincronizar las capturas confirmadas con el backend NestJS despues de iniciar sesion y seleccionar una accion.
 - Iniciar sesion con usuario/contrasena simple contra el backend.
@@ -111,6 +111,7 @@ Edge reserva `ALT + SHIFT + S` para su propia herramienta. Manual Builder usa `A
 - La sesion y cada seleccion del catalogo se guardan automaticamente.
 - `Crear manual remoto`: generar un manual remoto para la accion seleccionada.
 - `Cargar manual remoto`: traer los pasos existentes del backend al editor local.
+- `Exportar PDF del sistema`: consolidar los modulos, acciones y manuales remotos del sistema seleccionado en un solo documento.
 - `Guardar datos del manual`: persistir titulo, autor y descripcion del documento.
 - `Exportar PDF`: abrir la pagina de generacion y descargar el documento profesional.
 - `Imprimir`: abrir el dialogo nativo como alternativa de respaldo.
@@ -156,7 +157,7 @@ Edge reserva `ALT + SHIFT + S` para su propia herramienta. Manual Builder usa `A
    - La imagen remota se usa como contexto y original local para poder seguir editando/exportando.
 11. El editor de pasos permite:
    - Cambiar titulo.
-   - Escribir descripcion.
+   - Escribir una accion por linea y usar guiones, asteriscos, vinetas o numeracion.
    - Reordenar o eliminar el paso.
    - Descargar la captura completa.
 12. La seccion de documento permite:
@@ -189,6 +190,9 @@ La generacion se ejecuta en `manual.html`, donde estan disponibles Canvas, Blob 
 Caracteristicas principales:
 
 - A4 horizontal con margenes propios, portada y una pagina por paso.
+- La descripcion del paso se muestra una sola vez en `ACCION PRINCIPAL`, respetando cada linea como una vineta.
+- `PAGINA / RECURSO` aparece solo en el primer paso y usa la informacion de su captura.
+- La exportacion por sistema agrega un indice de modulos y acciones, y un breadcrumb de contexto en cada paso.
 - Paleta roja, blanca, dorada y acentos verdes para resultados.
 - Captura general sin deformacion, detalle contextual y placeholders cuando falta una imagen.
 - JPEG, PNG y WebP; WebP se convierte mediante Canvas antes de incrustarse.
@@ -198,7 +202,7 @@ Caracteristicas principales:
 - Compatibilidad con `guide`, `annotationBaked` y alias de imagenes de JSON anteriores.
 - Progreso visible y bloqueo de exportaciones simultaneas.
 
-El codigo esta separado en `lib/pdf`: tipos, tema, texto, contenido, imagenes, generador y descarga. `generateManualPdf()` devuelve `Uint8Array`; `exportManualPdf()` genera el Blob y descarga el archivo.
+El codigo esta separado en `lib/pdf`: tipos, tema, texto, contenido, imagenes, generador y descarga. `generateManualPdf()` devuelve `Uint8Array`; `exportManualPdf()` genera el Blob y descarga el archivo. La exportacion individual se inicia desde `manual.html`; la consolidada por sistema usa el mismo generador directamente desde el panel.
 
 ### Fuentes
 
@@ -272,3 +276,5 @@ La siguiente iteracion deberia incorporar:
 22. Usar `Cargar manual remoto` y confirmar que los pasos existentes aparezcan en el editor.
 23. Editar titulo o descripcion de un paso cargado y pulsar `Guardar cambios`.
 24. Probar en una pagina con scroll y despues de navegar dentro de una SPA.
+25. Escribir varias acciones separadas por saltos de linea y verificar que el PDF las muestre como vinetas sin repetir la descripcion bajo el titulo.
+26. Seleccionar un sistema con manuales remotos, pulsar `Exportar PDF del sistema` y verificar el indice de modulos y acciones.

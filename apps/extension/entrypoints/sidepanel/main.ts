@@ -42,8 +42,10 @@ import {
   type RemoteWorkspaceRecord,
   type RemoteSystemModuleSummary,
   type RemoteSystemSummary,
+  type RemoteSystemTree,
   type WorkspaceOverview,
 } from '../../lib/manual-builder-api';
+import type { ManualSystemStructure } from '../../lib/pdf/manual-pdf.types';
 import { loadPanelState, savePanelState } from '../../lib/panel-state';
 import { loadManualDraft, resetManualDraft, saveManualDraft } from '../../lib/manual-step-state';
 import './style.css';
@@ -92,6 +94,12 @@ interface ManualDraftSeed {
   description?: string | null;
   createdAt?: string | null;
 }
+
+interface SystemPdfExportDocument extends ManualDraft {
+  structure: ManualSystemStructure;
+}
+
+type SystemExportState = 'idle' | 'working' | 'completed' | 'error';
 
 const MANUAL_PAGE_PATH = '/manual.html' as const;
 const DEFAULT_REMOTE_FRAMING = 'context' as const;
@@ -143,6 +151,8 @@ let newModuleNameDraft = '';
 let newActionNameDraft = '';
 let collaboratorUsernameDraft = '';
 let collaboratorRoleDraft: RemoteWorkspaceMemberRole = 'editor';
+let systemExportState: SystemExportState = 'idle';
+let systemExportMessage = '';
 
 const captureImageCache = new Map<string, Promise<HTMLImageElement>>();
 
@@ -177,6 +187,8 @@ const backendLoginButton = queryElement<HTMLButtonElement>('backend-login-button
 const backendRegisterButton = queryElement<HTMLButtonElement>('backend-register-button');
 const createRemoteManualButton = queryElement<HTMLButtonElement>('create-remote-manual-button');
 const loadRemoteManualButton = queryElement<HTMLButtonElement>('load-remote-manual-button');
+const exportSystemPdfButton = queryElement<HTMLButtonElement>('export-system-pdf-button');
+const systemExportStatus = queryElement<HTMLParagraphElement>('system-export-status');
 const pendingSection = queryElement<HTMLElement>('pending-section');
 const pendingSelector = queryElement<HTMLParagraphElement>('pending-selector');
 const errorSection = queryElement<HTMLElement>('error-section');
@@ -267,6 +279,8 @@ async function initializeSidePanel(): Promise<void> {
 
   backendWorkspaceSelect.addEventListener('change', () => {
     backendWorkspaceIdDraft = backendWorkspaceSelect.value;
+    systemExportState = 'idle';
+    systemExportMessage = '';
     backendSystemIdDraft = '';
     backendModuleIdDraft = '';
     backendActionIdDraft = '';
@@ -283,6 +297,8 @@ async function initializeSidePanel(): Promise<void> {
 
   backendSystemSelect.addEventListener('change', () => {
     backendSystemIdDraft = backendSystemSelect.value;
+    systemExportState = 'idle';
+    systemExportMessage = '';
     backendModuleIdDraft = '';
     backendActionIdDraft = '';
     backendManualIdDraft = '';
@@ -440,6 +456,10 @@ async function initializeSidePanel(): Promise<void> {
 
   loadRemoteManualButton.addEventListener('click', () => {
     void runPanelAction(handleLoadRemoteManual);
+  });
+
+  exportSystemPdfButton.addEventListener('click', () => {
+    void runPanelAction(handleExportSystemPdf);
   });
 
   createSystemButton.addEventListener('click', () => {
@@ -669,6 +689,7 @@ function renderBackendSyncSection(): void {
   collaboratorRoleSelect.value = collaboratorRoleDraft;
   renderCatalogSelectors();
   backendSyncStatusText.textContent = buildBackendSyncStatusText();
+  renderSystemExportStatus();
 
   const hasApiUrlDraft = backendApiBaseUrlDraft.trim().length > 0;
   const isAuthenticated = backendAuthTokenDraft !== null && backendAuthTokenDraft.trim().length > 0;
@@ -681,6 +702,7 @@ function renderBackendSyncSection(): void {
     backendActionIdDraft.trim().length > 0;
   const canCreateRemoteManual = hasConnectionDraft && getEffectiveManualTitle().length > 0;
   const canLoadRemoteManual = hasConnectionDraft && backendManualIdDraft.trim().length > 0;
+  const canExportSystem = hasApiUrlDraft && isAuthenticated && backendSystemIdDraft.trim().length > 0;
   const canLogin = hasApiUrlDraft && backendUsernameDraft.trim().length >= 2 && backendPasswordDraft.length >= 6;
   const isReady = isAuthenticated && backendActionIdDraft.trim().length > 0;
   const usesLocalStorage = backendStorageProviderDraft === 'local';
@@ -694,6 +716,7 @@ function renderBackendSyncSection(): void {
   backendRegisterButton.disabled = panelBusy || !canLogin;
   createRemoteManualButton.disabled = panelBusy || !canCreateRemoteManual;
   loadRemoteManualButton.disabled = panelBusy || !canLoadRemoteManual;
+  exportSystemPdfButton.disabled = panelBusy || !canExportSystem;
   createWorkspaceButton.disabled =
     panelBusy ||
     !hasApiUrlDraft ||
@@ -723,6 +746,18 @@ function renderBackendSyncSection(): void {
     !isAuthenticated ||
     !hasWorkspaceDraft ||
     collaboratorUsernameDraft.trim().length < 2;
+}
+
+function renderSystemExportStatus(): void {
+  systemExportStatus.hidden = systemExportState === 'idle';
+  systemExportStatus.dataset.state = systemExportState;
+  systemExportStatus.textContent = systemExportMessage;
+}
+
+function setSystemExportStatus(state: SystemExportState, message: string): void {
+  systemExportState = state;
+  systemExportMessage = message;
+  renderSystemExportStatus();
 }
 
 function renderCatalogSelectors(): void {
@@ -2037,6 +2072,140 @@ async function handleLoadRemoteManual(): Promise<void> {
   }
 
   await refreshState();
+}
+
+async function handleExportSystemPdf(): Promise<void> {
+  try {
+    await persistPendingEditsIfNeeded();
+    const settings = await persistBackendSettingsDraft();
+
+    if (settings.authToken === null || settings.authToken.trim().length === 0) {
+      throw new Error('Inicia sesion antes de exportar un sistema.');
+    }
+    if (backendSystemIdDraft.trim().length === 0) {
+      throw new Error('Selecciona el sistema que deseas exportar.');
+    }
+
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    setSystemExportStatus('working', 'Consultando modulos, acciones y manuales del sistema...');
+    const systemTree = await client.getSystemTree(backendSystemIdDraft);
+    const systemDocument = await buildSystemPdfExportDocument(systemTree, client);
+
+    if (systemDocument.steps.length === 0) {
+      throw new Error('El sistema seleccionado no tiene pasos guardados para exportar.');
+    }
+
+    const { exportManualPdf } = await import('../../lib/pdf/manual-pdf.download');
+    await exportManualPdf(systemDocument, {
+      includeCover: true,
+      drawSelectionHighlight: 'auto',
+      imageQuality: 0.94,
+      maxImageDimension: 2560,
+      fileName: systemDocument.title,
+      fontUrls: {
+        regular: getRuntimeUrl('/fonts/NotoSans-Regular.ttf'),
+        bold: getRuntimeUrl('/fonts/NotoSans-Bold.ttf'),
+      },
+      onProgress: (progress) => {
+        setSystemExportStatus('working', progress.message);
+      },
+    });
+
+    setSystemExportStatus(
+      'completed',
+      `PDF del sistema generado con ${systemDocument.steps.length} paso${systemDocument.steps.length === 1 ? '' : 's'}.`,
+    );
+  } catch (error) {
+    setSystemExportStatus('error', getErrorMessage(error));
+  }
+}
+
+async function buildSystemPdfExportDocument(
+  systemTree: RemoteSystemTree,
+  client: ReturnType<typeof createManualBuilderApiClient>,
+): Promise<SystemPdfExportDocument> {
+  const steps: ManualStep[] = [];
+  const structure: ManualSystemStructure = {
+    systemName: systemTree.system.name,
+    modules: [],
+  };
+  const totalManuals = systemTree.systemModules.reduce(
+    (total, systemModule) => total + systemModule.actions.reduce(
+      (moduleTotal, action) => moduleTotal + action.manuals.length,
+      0,
+    ),
+    0,
+  );
+  let processedManuals = 0;
+
+  for (const systemModule of systemTree.systemModules) {
+    const structureModule: ManualSystemStructure['modules'][number] = {
+      name: systemModule.name,
+      actions: [],
+    };
+
+    for (const action of systemModule.actions) {
+      const structureAction: ManualSystemStructure['modules'][number]['actions'][number] = {
+        name: action.name,
+        manuals: [],
+      };
+
+      for (const manualSummary of action.manuals) {
+        processedManuals += 1;
+        setSystemExportStatus(
+          'working',
+          `Cargando manual ${processedManuals} de ${totalManuals}: ${manualSummary.title}`,
+        );
+        const remoteManual = await client.getManual(manualSummary.id);
+        const manualDraft = await buildManualDraftFromRemoteManual(remoteManual, client.baseUrl);
+
+        structureAction.manuals.push({
+          title: remoteManual.manual.title,
+          stepCount: manualDraft.steps.length,
+        });
+
+        for (const step of manualDraft.steps) {
+          steps.push({
+            ...step,
+            order: steps.length + 1,
+            hierarchy: {
+              systemName: systemTree.system.name,
+              moduleName: systemModule.name,
+              actionName: action.name,
+              manualTitle: remoteManual.manual.title,
+            },
+          });
+        }
+      }
+
+      structureModule.actions.push(structureAction);
+    }
+
+    structure.modules.push(structureModule);
+  }
+
+  const latestUpdatedAt = systemTree.systemModules
+    .flatMap((systemModule) => systemModule.actions)
+    .flatMap((action) => action.manuals)
+    .map((manual) => manual.updatedAt)
+    .sort()
+    .at(-1) ?? null;
+  const title = sanitizeManualTitle(`Manual del sistema ${systemTree.system.name}`)
+    || 'Manual del sistema';
+  const description = sanitizeManualDescription(systemTree.system.description)
+    || sanitizeManualDescription(
+      `Documento consolidado de ${structure.modules.length} modulo${structure.modules.length === 1 ? '' : 's'} del sistema ${systemTree.system.name}.`,
+    );
+
+  return {
+    title,
+    author: sanitizeManualAuthor(backendDisplayNameDraft || backendUsernameDraft || 'Manual Builder'),
+    description,
+    createdAt: new Date().toISOString(),
+    steps,
+    lastUpdatedAt: latestUpdatedAt,
+    structure,
+  };
 }
 
 async function handleAddWorkspaceCollaborator(): Promise<void> {
@@ -3418,7 +3587,11 @@ function triggerDownload(href: string, filename: string): void {
 }
 
 function getManualPageUrl(): string {
-  return (browser.runtime.getURL as (path: string) => string)(MANUAL_PAGE_PATH);
+  return getRuntimeUrl(MANUAL_PAGE_PATH);
+}
+
+function getRuntimeUrl(path: string): string {
+  return (browser.runtime.getURL as (resourcePath: string) => string)(path);
 }
 
 function getErrorMessage(error: unknown): string {

@@ -1,5 +1,6 @@
 import type {
   ManualDraft,
+  ManualStepHierarchy,
   ManualStepGuide,
   SelectedElementData,
   SelectionRect,
@@ -89,10 +90,26 @@ export interface CompatibleManualStep {
   viewport?: ViewportData;
   annotationBaked?: boolean;
   guide?: ManualStepGuide;
+  hierarchy?: Partial<ManualStepHierarchy>;
+}
+
+export interface ManualSystemStructure {
+  systemName: string;
+  modules: Array<{
+    name: string;
+    actions: Array<{
+      name: string;
+      manuals: Array<{
+        title: string;
+        stepCount: number;
+      }>;
+    }>;
+  }>;
 }
 
 export interface ManualExport extends Partial<Omit<ManualDraft, 'steps'>> {
   steps: readonly CompatibleManualStep[];
+  structure?: ManualSystemStructure;
 }
 
 export interface ResolvedManualStep {
@@ -113,6 +130,7 @@ export interface ResolvedManualStep {
   selectedElement: CompatibleSelectedElement;
   annotationBaked: boolean | undefined;
   guide: ManualStepGuide | undefined;
+  hierarchy: ManualStepHierarchy | undefined;
 }
 
 export interface ResolvedManual {
@@ -121,6 +139,7 @@ export interface ResolvedManual {
   author: string;
   createdAt: string;
   steps: ResolvedManualStep[];
+  structure: ManualSystemStructure | undefined;
 }
 
 export interface ResolvedStepContent {

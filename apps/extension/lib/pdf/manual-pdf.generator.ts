@@ -22,6 +22,7 @@ import type {
   ManualPdfOptions,
   ManualPdfProgress,
   ManualPdfTheme,
+  ManualSystemStructure,
   ProcessedImage,
   ResolvedManual,
   ResolvedManualStep,
@@ -79,7 +80,8 @@ export async function generateManualPdf(
     maxImageDimension: Math.max(320, Math.round(options.maxImageDimension ?? DEFAULT_MAX_IMAGE_DIMENSION)),
   };
 
-  if (options.includeCover !== false) {
+  const coverPageCount = options.includeCover === false ? 0 : 1;
+  if (coverPageCount > 0) {
     reportProgress(options, { current: 0, total, percentage: 5, stage: 'cover', message: 'Diseñando la portada...' });
     let coverImage: ProcessedImage | undefined;
     try {
@@ -90,6 +92,10 @@ export async function generateManualPdf(
     }
     await drawCover(document, manual, coverImage, fonts, theme);
   }
+
+  const structurePageCount = manual.structure === undefined
+    ? 0
+    : drawSystemStructurePages(document, manual.structure, fonts, theme);
 
   for (let index = 0; index < manual.steps.length; index += 1) {
     const step = manual.steps[index]!;
@@ -108,7 +114,19 @@ export async function generateManualPdf(
     } catch {
       images = { general: undefined, detail: undefined };
     }
-    await drawStepPage(document, manual, step, resolveStepContent(step), images, current, total, fonts, theme, options);
+    await drawStepPage(
+      document,
+      manual,
+      step,
+      resolveStepContent(step),
+      images,
+      current,
+      total,
+      coverPageCount + structurePageCount,
+      fonts,
+      theme,
+      options,
+    );
     await yieldToUi();
   }
 
@@ -225,6 +243,163 @@ async function drawCover(
   drawLabel(page, 'LISTO PARA CONSULTA', 616, 56, fonts.bold, theme.green, fonts.boldIsCustom, 8);
 }
 
+function drawSystemStructurePages(
+  document: PDFDocument,
+  structure: ManualSystemStructure,
+  fonts: PdfFonts,
+  theme: ManualPdfTheme,
+): number {
+  const pages: PDFPage[] = [];
+  let page!: PDFPage;
+  let cursorTop = 0;
+
+  const createPage = (continuation: boolean): void => {
+    page = document.addPage([theme.pageWidth, theme.pageHeight]);
+    pages.push(page);
+    page.drawRectangle({
+      x: 0,
+      y: 0,
+      width: theme.pageWidth,
+      height: theme.pageHeight,
+      color: hexToRgb(theme.warmWhite),
+    });
+    page.drawRectangle({
+      x: 0,
+      y: theme.pageHeight - 12,
+      width: theme.pageWidth,
+      height: 12,
+      color: hexToRgb(theme.primaryRed),
+    });
+    drawLabel(
+      page,
+      continuation ? 'ESTRUCTURA DEL SISTEMA / CONTINUACION' : 'ESTRUCTURA DEL SISTEMA',
+      30,
+      557,
+      fonts.bold,
+      theme.primaryRed,
+      fonts.boldIsCustom,
+      8,
+    );
+    drawTextBox(page, structure.systemName || 'Sistema', fonts, theme, {
+      x: 30,
+      top: 535,
+      width: 760,
+      height: 34,
+      preferredSize: 24,
+      minimumSize: 18,
+      color: theme.darkText,
+      bold: true,
+      maxLines: 1,
+    });
+    cursorTop = 475;
+  };
+
+  const drawModuleHeader = (moduleName: string, continuation: boolean): void => {
+    page.drawRectangle({
+      x: 30,
+      y: cursorTop - 28,
+      width: 782,
+      height: 28,
+      color: hexToRgb(theme.white),
+      borderColor: hexToRgb(theme.softBorder),
+      borderWidth: 0.7,
+    });
+    drawTextBox(page, `${continuation ? 'MODULO (CONT.)' : 'MODULO'}: ${moduleName}`, fonts, theme, {
+      x: 44,
+      top: cursorTop - 7,
+      width: 750,
+      height: 16,
+      preferredSize: 10,
+      minimumSize: 8,
+      color: theme.primaryRed,
+      bold: true,
+      maxLines: 1,
+    });
+    cursorTop -= 38;
+  };
+
+  createPage(false);
+
+  for (const systemModule of structure.modules) {
+    if (cursorTop - 38 < 45) {
+      createPage(true);
+    }
+    drawModuleHeader(systemModule.name, false);
+
+    if (systemModule.actions.length === 0) {
+      drawTextBox(page, 'Sin acciones registradas.', fonts, theme, {
+        x: 58,
+        top: cursorTop,
+        width: 720,
+        height: 18,
+        preferredSize: 8,
+        minimumSize: 7,
+        color: theme.mutedText,
+        maxLines: 1,
+      });
+      cursorTop -= 30;
+      continue;
+    }
+
+    for (const action of systemModule.actions) {
+      if (cursorTop - 42 < 45) {
+        createPage(true);
+        drawModuleHeader(systemModule.name, true);
+      }
+
+      const totalSteps = action.manuals.reduce((total, manual) => total + manual.stepCount, 0);
+      const manualTitles = action.manuals.map((manual) => manual.title).join(', ');
+      const actionDetail = action.manuals.length === 0
+        ? 'Sin manuales registrados'
+        : `${action.manuals.length} manual${action.manuals.length === 1 ? '' : 'es'} | ${totalSteps} paso${totalSteps === 1 ? '' : 's'} | ${manualTitles}`;
+
+      page.drawCircle({
+        x: 45,
+        y: cursorTop - 7,
+        size: 4,
+        color: hexToRgb(theme.gold),
+      });
+      drawTextBox(page, action.name, fonts, theme, {
+        x: 58,
+        top: cursorTop,
+        width: 730,
+        height: 16,
+        preferredSize: 9.5,
+        minimumSize: 8,
+        color: theme.darkText,
+        bold: true,
+        maxLines: 1,
+      });
+      drawTextBox(page, actionDetail, fonts, theme, {
+        x: 58,
+        top: cursorTop - 17,
+        width: 730,
+        height: 16,
+        preferredSize: 7.5,
+        minimumSize: 6.5,
+        color: theme.mutedText,
+        maxLines: 1,
+      });
+      cursorTop -= 42;
+    }
+  }
+
+  pages.forEach((structurePage, index) => {
+    drawLabel(
+      structurePage,
+      `ESTRUCTURA ${index + 1} DE ${pages.length}`,
+      700,
+      20,
+      fonts.bold,
+      theme.mutedText,
+      fonts.boldIsCustom,
+      7,
+    );
+  });
+
+  return pages.length;
+}
+
 async function drawStepPage(
   document: PDFDocument,
   manual: ResolvedManual,
@@ -233,6 +408,7 @@ async function drawStepPage(
   images: PreparedStepImages,
   current: number,
   total: number,
+  pageNumberOffset: number,
   fonts: PdfFonts,
   theme: ManualPdfTheme,
   options: ManualPdfOptions,
@@ -266,25 +442,50 @@ async function drawStepPage(
     maxLines: 2,
     lineHeightRatio: 1.05,
   });
-  drawTextBox(page, content.summary, fonts, theme, {
-    x: 97,
-    top: 494,
-    width: 655,
-    height: 27,
-    preferredSize: 9,
-    minimumSize: 7.5,
-    color: theme.mutedText,
-    maxLines: 2,
-  });
+  if (step.hierarchy !== undefined) {
+    drawTextBox(
+      page,
+      `MODULO: ${step.hierarchy.moduleName} | ACCION: ${step.hierarchy.actionName} | MANUAL: ${step.hierarchy.manualTitle}`,
+      fonts,
+      theme,
+      {
+        x: 97,
+        top: 493,
+        width: 700,
+        height: 14,
+        preferredSize: 7.5,
+        minimumSize: 6.5,
+        color: theme.mutedText,
+        bold: true,
+        maxLines: 1,
+      },
+    );
+  }
 
-  const generalCard = { x: 30, y: 125, width: 518, height: 330 };
-  const actionCard = { x: 564, y: 286, width: 248, height: 169 };
-  const detailCard = { x: 564, y: 125, width: 248, height: 145 };
   const hasExpectedResult = content.expectedResult.trim().length > 0;
+  const hasResource = current === 1 && content.resource.trim().length > 0;
+  const hasBottomCards = hasExpectedResult || hasResource;
+  const mainContentBottom = hasBottomCards ? 125 : 38;
+  const generalCard = { x: 30, y: mainContentBottom, width: 518, height: 480 - mainContentBottom };
+  const detailCard = {
+    x: 564,
+    y: mainContentBottom,
+    width: 248,
+    height: hasBottomCards ? 145 : 180,
+  };
+  const actionCard = {
+    x: 564,
+    y: detailCard.y + detailCard.height + 16,
+    width: 248,
+    height: 480 - (detailCard.y + detailCard.height + 16),
+  };
   const expectedCard = { x: 30, y: 38, width: 518, height: 70 };
-  const resourceCard = hasExpectedResult
+  const resourceCard = hasExpectedResult && hasResource
     ? { x: 564, y: 38, width: 248, height: 70 }
     : { x: 30, y: 38, width: 782, height: 70 };
+  const resolvedExpectedCard = hasExpectedResult && !hasResource
+    ? { x: 30, y: 38, width: 782, height: 70 }
+    : expectedCard;
 
   drawCard(page, generalCard, theme.white, theme.softBorder);
   let generalPlacement: ImagePlacement | undefined;
@@ -303,8 +504,9 @@ async function drawStepPage(
 
   drawCard(page, actionCard, theme.white, theme.softBorder);
   drawLabel(page, 'ACCIÓN PRINCIPAL', actionCard.x + 14, actionCard.y + actionCard.height - 18, fonts.bold, theme.primaryRed, fonts.boldIsCustom, 8);
-  const visibleActions = content.actions.slice(0, 4);
-  const actionText = visibleActions.map((action, index) => `${index + 1}. ${action}`).join('\n')
+  const maximumVisibleActions = actionCard.height >= 220 ? 7 : 5;
+  const visibleActions = content.actions.slice(0, maximumVisibleActions);
+  const actionText = visibleActions.map((action) => `- ${action}`).join('\n')
     + (content.actions.length > visibleActions.length ? '\n...' : '');
   drawTextBox(page, actionText, fonts, theme, {
     x: actionCard.x + 14,
@@ -314,7 +516,7 @@ async function drawStepPage(
     preferredSize: 9,
     minimumSize: 7,
     color: theme.darkText,
-    maxLines: 11,
+    maxLines: actionCard.height >= 220 ? 17 : 13,
     lineHeightRatio: 1.23,
   });
 
@@ -346,13 +548,13 @@ async function drawStepPage(
   });
 
   if (hasExpectedResult) {
-    drawCard(page, expectedCard, theme.white, theme.softBorder);
-    page.drawCircle({ x: expectedCard.x + 18, y: expectedCard.y + expectedCard.height - 18, size: 5, color: hexToRgb(theme.green) });
-    drawLabel(page, 'RESULTADO ESPERADO', expectedCard.x + 30, expectedCard.y + expectedCard.height - 15, fonts.bold, theme.green, fonts.boldIsCustom, 8);
+    drawCard(page, resolvedExpectedCard, theme.white, theme.softBorder);
+    page.drawCircle({ x: resolvedExpectedCard.x + 18, y: resolvedExpectedCard.y + resolvedExpectedCard.height - 18, size: 5, color: hexToRgb(theme.green) });
+    drawLabel(page, 'RESULTADO ESPERADO', resolvedExpectedCard.x + 30, resolvedExpectedCard.y + resolvedExpectedCard.height - 15, fonts.bold, theme.green, fonts.boldIsCustom, 8);
     drawTextBox(page, content.expectedResult, fonts, theme, {
-      x: expectedCard.x + 14,
-      top: expectedCard.y + expectedCard.height - 30,
-      width: expectedCard.width - 28,
+      x: resolvedExpectedCard.x + 14,
+      top: resolvedExpectedCard.y + resolvedExpectedCard.height - 30,
+      width: resolvedExpectedCard.width - 28,
       height: 34,
       preferredSize: 8.5,
       minimumSize: 7,
@@ -361,18 +563,20 @@ async function drawStepPage(
     });
   }
 
-  drawCard(page, resourceCard, theme.white, theme.softBorder);
-  drawLabel(page, 'PÁGINA / RECURSO', resourceCard.x + 14, resourceCard.y + resourceCard.height - 15, fonts.bold, theme.gold, fonts.boldIsCustom, 8);
-  drawTextBox(page, content.resource, fonts, theme, {
-    x: resourceCard.x + 14,
-    top: resourceCard.y + resourceCard.height - 30,
-    width: resourceCard.width - 28,
-    height: 34,
-    preferredSize: 8,
-    minimumSize: 6.5,
-    color: theme.darkText,
-    maxLines: 3,
-  });
+  if (hasResource) {
+    drawCard(page, resourceCard, theme.white, theme.softBorder);
+    drawLabel(page, 'PÁGINA / RECURSO', resourceCard.x + 14, resourceCard.y + resourceCard.height - 15, fonts.bold, theme.gold, fonts.boldIsCustom, 8);
+    drawTextBox(page, content.resource, fonts, theme, {
+      x: resourceCard.x + 14,
+      top: resourceCard.y + resourceCard.height - 30,
+      width: resourceCard.width - 28,
+      height: 34,
+      preferredSize: 8,
+      minimumSize: 6.5,
+      color: theme.darkText,
+      maxLines: 3,
+    });
+  }
 
   const progressWidth = (current / total) * (theme.pageWidth - 60);
   page.drawRectangle({ x: 30, y: 20, width: theme.pageWidth - 60, height: 3, color: hexToRgb(theme.softBorder) });
@@ -387,7 +591,7 @@ async function drawStepPage(
     color: theme.mutedText,
     maxLines: 1,
   });
-  drawLabel(page, `${current + (options.includeCover === false ? 0 : 1)}`, 799, 10, fonts.bold, theme.mutedText, fonts.boldIsCustom, 7);
+  drawLabel(page, `${current + pageNumberOffset}`, 799, 10, fonts.bold, theme.mutedText, fonts.boldIsCustom, 7);
 }
 
 async function drawEmbeddedImage(

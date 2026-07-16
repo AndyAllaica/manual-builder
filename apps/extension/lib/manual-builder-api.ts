@@ -293,6 +293,21 @@ export interface RemoteManualDetail {
   steps: RemoteManualStepWithAsset[];
 }
 
+export interface RemoteSystemTree {
+  system: RemoteSystemRecord;
+  systemModules: Array<RemoteSystemModuleRecord & {
+    actions: Array<RemoteActionRecord & {
+      manuals: Array<{
+        id: string;
+        title: string;
+        status: string;
+        currentVersionId: string;
+        updatedAt: string;
+      }>;
+    }>;
+  }>;
+}
+
 interface CreateRemoteCaptureResponse {
   capture: RemoteCaptureRecord;
   originalAsset: RemoteAssetRecord;
@@ -324,6 +339,7 @@ export interface ManualBuilderApiClient {
     input: { username: string; role?: RemoteWorkspaceMemberRole },
   ): Promise<RemoteWorkspaceMemberRecord>;
   getWorkspaceOverview(workspaceId: string): Promise<WorkspaceOverview>;
+  getSystemTree(systemId: string): Promise<RemoteSystemTree>;
   listManualsByAction(actionId: string): Promise<RemoteManualSummary[]>;
   createSystem(input: CreateRemoteSystemInput): Promise<RemoteSystemSummary>;
   createSystemModule(input: CreateRemoteSystemModuleInput): Promise<RemoteSystemModuleSummary>;
@@ -394,6 +410,13 @@ export function createManualBuilderApiClient(apiBaseUrl: string, authToken?: str
       requestJson<WorkspaceOverview>(
         baseUrl,
         `/catalog/workspaces/${encodeURIComponent(workspaceId)}`,
+        undefined,
+        authToken,
+      ),
+    getSystemTree: (systemId) =>
+      requestJson<RemoteSystemTree>(
+        baseUrl,
+        `/catalog/systems/${encodeURIComponent(systemId)}`,
         undefined,
         authToken,
       ),

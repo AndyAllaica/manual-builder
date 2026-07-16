@@ -181,7 +181,16 @@
             <button id="load-remote-manual-button" class="ghost-button" type="button">
               Cargar manual remoto
             </button>
+            <button id="export-system-pdf-button" class="secondary-button" type="button">
+              Exportar PDF del sistema
+            </button>
           </div>
+          <p
+            id="system-export-status"
+            class="summary-text system-export-status"
+            aria-live="polite"
+            hidden
+          ></p>
         </section>
 
         <section id="pending-section" class="pending-section" hidden>
@@ -336,8 +345,9 @@
                 <textarea
                   id="step-description-input"
                   class="field-textarea"
-                  rows="4"
+                  rows="6"
                   maxlength="600"
+                  placeholder="Escribe una accion por linea. Puedes usar -, * o numeracion."
                 ></textarea>
               </label>
 

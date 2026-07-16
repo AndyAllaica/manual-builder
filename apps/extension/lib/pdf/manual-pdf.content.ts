@@ -1,9 +1,16 @@
-import { stripStepNumberPrefix, type ManualStepGuide, type SelectionRect, type ViewportData } from '../manual-builder';
+import {
+  stripStepNumberPrefix,
+  type ManualStepGuide,
+  type ManualStepHierarchy,
+  type SelectionRect,
+  type ViewportData,
+} from '../manual-builder';
 import { normalizeWhitespace, truncateText } from './manual-pdf.text';
 import type {
   CompatibleManualStep,
   CompatibleSelectedElement,
   ManualExport,
+  ManualSystemStructure,
   ResolvedManual,
   ResolvedManualStep,
   ResolvedStepContent,
@@ -44,6 +51,7 @@ export function resolveManualExport(manual: ManualExport): ResolvedManual {
     author: normalizeWhitespace(manual.author),
     createdAt: normalizeWhitespace(manual.createdAt) || new Date().toISOString(),
     steps: indexedSteps.map(({ step }, index) => resolveStep(step, index)),
+    structure: resolveSystemStructure(manual.structure),
   };
 }
 
@@ -69,10 +77,11 @@ export function resolveStepContent(step: ResolvedManualStep): ResolvedStepConten
     resolveDomain(step.url),
     'Complete la acción indicada en el elemento resaltado.',
   );
+  const descriptionActions = splitInstructionActions(step.description);
   const actions = guide?.actions.length
     ? guide.actions
-    : isUsableInstructionText(step.description)
-      ? [step.description]
+    : descriptionActions.length > 0
+      ? descriptionActions
       : inferActions(element, label);
 
   return {
@@ -145,6 +154,14 @@ export function inferActions(element: CompatibleSelectedElement, label: string):
   return ['Revise la información resaltada.', 'Compruebe que los datos mostrados sean correctos.'];
 }
 
+export function splitInstructionActions(value: unknown): string[] {
+  return normalizeWhitespace(value)
+    .split('\n')
+    .map((line) => line.replace(/^(?:(?:[-*+]|\u2022|\u25E6|\u25AA)|\d{1,3}[.)])\s*/u, '').trim())
+    .filter(isUsableInstructionText)
+    .map((line) => truncateText(line, 220));
+}
+
 export function resolveResource(pageTitle: string, url: string): string {
   const title = normalizeWhitespace(pageTitle);
   const domain = resolveDomain(url);
@@ -180,6 +197,56 @@ function resolveStep(step: CompatibleManualStep, index: number): ResolvedManualS
     selectedElement,
     annotationBaked: typeof step.annotationBaked === 'boolean' ? step.annotationBaked : undefined,
     guide: step.guide,
+    hierarchy: resolveStepHierarchy(step.hierarchy),
+  };
+}
+
+function resolveStepHierarchy(hierarchy: Partial<ManualStepHierarchy> | undefined): ManualStepHierarchy | undefined {
+  if (hierarchy === undefined) {
+    return undefined;
+  }
+
+  const normalized = {
+    systemName: truncateText(normalizeWhitespace(hierarchy.systemName), 120),
+    moduleName: truncateText(normalizeWhitespace(hierarchy.moduleName), 120),
+    actionName: truncateText(normalizeWhitespace(hierarchy.actionName), 120),
+    manualTitle: truncateText(normalizeWhitespace(hierarchy.manualTitle), 120),
+  };
+
+  return normalized.moduleName.length > 0 || normalized.actionName.length > 0
+    ? normalized
+    : undefined;
+}
+
+function resolveSystemStructure(structure: ManualSystemStructure | undefined): ManualSystemStructure | undefined {
+  if (structure === undefined) {
+    return undefined;
+  }
+
+  const modules = structure.modules
+    .map((systemModule) => ({
+      name: truncateText(normalizeWhitespace(systemModule.name), 120),
+      actions: systemModule.actions
+        .map((action) => ({
+          name: truncateText(normalizeWhitespace(action.name), 120),
+          manuals: action.manuals
+            .map((manual) => ({
+              title: truncateText(normalizeWhitespace(manual.title), 120),
+              stepCount: Math.max(0, Math.trunc(manual.stepCount)),
+            }))
+            .filter((manual) => manual.title.length > 0),
+        }))
+        .filter((action) => action.name.length > 0),
+    }))
+    .filter((systemModule) => systemModule.name.length > 0);
+
+  if (modules.length === 0) {
+    return undefined;
+  }
+
+  return {
+    systemName: truncateText(normalizeWhitespace(structure.systemName), 120),
+    modules,
   };
 }
 
@@ -189,7 +256,7 @@ function normalizeGuide(guide: ManualStepGuide | undefined): Required<ManualStep
   }
 
   const actions = Array.isArray(guide.actions)
-    ? guide.actions.filter(isUsableInstructionText).map((action) => truncateText(action, 220))
+    ? guide.actions.flatMap(splitInstructionActions)
     : [];
   const normalized = {
     title: isUsableInstructionText(guide.title) ? normalizeWhitespace(guide.title) : '',

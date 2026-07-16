@@ -339,6 +339,15 @@ button:disabled {
   line-height: 1.45;
 }
 
+.system-export-status[data-state='completed'] {
+  color: #0f766e;
+}
+
+.system-export-status[data-state='error'] {
+  color: var(--panel-accent);
+  font-weight: 700;
+}
+
 .pending-section,
 .error-section {
   display: flex;

@@ -57,6 +57,13 @@ export interface ManualStepGuide {
   detailCaption?: string;
 }
 
+export interface ManualStepHierarchy {
+  systemName: string;
+  moduleName: string;
+  actionName: string;
+  manualTitle: string;
+}
+
 export interface ImageRedactionRegion {
   x: number;
   y: number;
@@ -103,6 +110,7 @@ export interface ManualStep {
   updatedAt?: string;
   annotationBaked?: boolean;
   guide?: ManualStepGuide;
+  hierarchy?: ManualStepHierarchy;
   remoteManualId?: string | null;
   remoteCaptureId?: string | null;
   remoteStepId?: string | null;
@@ -267,7 +275,7 @@ export function createManualStep(input: {
     id: crypto.randomUUID(),
     order,
     title: sanitizeStepTitle(title) || 'Elemento seleccionado',
-    description: clampText(description, MAX_STEP_DESCRIPTION_LENGTH) ?? '',
+    description: sanitizeStepDescription(description),
     selector: capture.selectedElement.selector,
     url: capture.selectedElement.url,
     pageTitle: capture.selectedElement.pageTitle,
@@ -426,7 +434,7 @@ export function stripStepNumberPrefix(value: string): string {
 }
 
 export function sanitizeStepDescription(value: string): string {
-  return clampText(value, MAX_STEP_DESCRIPTION_LENGTH) ?? '';
+  return clampMultilineText(value, MAX_STEP_DESCRIPTION_LENGTH) ?? '';
 }
 
 export function sanitizeStepExpectedResult(value: string): string {
@@ -442,7 +450,7 @@ export function sanitizeManualAuthor(value: string): string {
 }
 
 export function sanitizeManualDescription(value: string): string {
-  return clampText(value, MAX_MANUAL_DESCRIPTION_LENGTH) ?? '';
+  return clampMultilineText(value, MAX_MANUAL_DESCRIPTION_LENGTH) ?? '';
 }
 
 export function isSelectionCapturedMessage(value: unknown): value is SelectionCapturedMessage {
@@ -628,6 +636,22 @@ function clampText(value: string | null, maxLength: number): string | null {
   }
 
   return normalized.slice(0, maxLength);
+}
+
+function clampMultilineText(value: string | null, maxLength: number): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = value
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[\t ]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return normalized.length > 0 ? normalized.slice(0, maxLength).trimEnd() : null;
 }
 
 export function isSelectedElementData(value: unknown): value is SelectedElementData {
