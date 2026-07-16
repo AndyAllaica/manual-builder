@@ -631,8 +631,7 @@ async function drawPortraitStepPage(
     lineHeightRatio: 1.05,
   });
   const hasExpectedResult = content.expectedResult.trim().length > 0;
-  const hasResource = documentCurrent === 1 && content.resource.trim().length > 0;
-  const hasBottomCards = hasExpectedResult || hasResource;
+  const hasBottomCards = hasExpectedResult;
   const bottomCardY = contentBounds.bottom + 40;
   const bottomCardHeight = 75;
   const lowerCardsY = hasBottomCards ? bottomCardY + 90 : bottomCardY;
@@ -712,9 +711,7 @@ async function drawPortraitStepPage(
   });
 
   if (hasExpectedResult) {
-    const expectedCard = hasResource
-      ? { x: 30, y: bottomCardY, width: actionWidth, height: bottomCardHeight }
-      : { x: 30, y: bottomCardY, width: contentWidth, height: bottomCardHeight };
+    const expectedCard = { x: 30, y: bottomCardY, width: contentWidth, height: bottomCardHeight };
     drawCard(page, expectedCard, theme.white, theme.softBorder);
     page.drawCircle({ x: expectedCard.x + 18, y: expectedCard.y + expectedCard.height - 18, size: 5, color: hexToRgb(theme.green) });
     drawLabel(page, 'RESULTADO ESPERADO', expectedCard.x + 30, expectedCard.y + expectedCard.height - 15, fonts.bold, theme.green, fonts.boldIsCustom, 8);
@@ -725,24 +722,6 @@ async function drawPortraitStepPage(
       height: 38,
       preferredSize: 8.2,
       minimumSize: 7,
-      color: theme.darkText,
-      maxLines: 3,
-    });
-  }
-
-  if (hasResource) {
-    const resourceCard = hasExpectedResult
-      ? { x: detailX, y: bottomCardY, width: detailWidth, height: bottomCardHeight }
-      : { x: 30, y: bottomCardY, width: contentWidth, height: bottomCardHeight };
-    drawCard(page, resourceCard, theme.white, theme.softBorder);
-    drawLabel(page, 'PAGINA / RECURSO', resourceCard.x + 14, resourceCard.y + resourceCard.height - 15, fonts.bold, theme.gold, fonts.boldIsCustom, 8);
-    drawTextBox(page, content.resource, fonts, theme, {
-      x: resourceCard.x + 14,
-      top: resourceCard.y + resourceCard.height - 30,
-      width: resourceCard.width - 28,
-      height: 38,
-      preferredSize: 7.5,
-      minimumSize: 6.2,
       color: theme.darkText,
       maxLines: 3,
     });
@@ -1075,8 +1054,7 @@ async function drawStepPage(
     lineHeightRatio: 1.05,
   });
   const hasExpectedResult = content.expectedResult.trim().length > 0;
-  const hasResource = documentCurrent === 1 && content.resource.trim().length > 0;
-  const hasBottomCards = hasExpectedResult || hasResource;
+  const hasBottomCards = hasExpectedResult;
   const mainContentBottom = hasBottomCards ? 125 : 38;
   const generalCard = { x: 30, y: mainContentBottom, width: 518, height: 480 - mainContentBottom };
   const detailCard = {
@@ -1091,13 +1069,7 @@ async function drawStepPage(
     width: 248,
     height: 480 - (detailCard.y + detailCard.height + 16),
   };
-  const expectedCard = { x: 30, y: 38, width: 518, height: 70 };
-  const resourceCard = hasExpectedResult && hasResource
-    ? { x: 564, y: 38, width: 248, height: 70 }
-    : { x: 30, y: 38, width: 782, height: 70 };
-  const resolvedExpectedCard = hasExpectedResult && !hasResource
-    ? { x: 30, y: 38, width: 782, height: 70 }
-    : expectedCard;
+  const expectedCard = { x: 30, y: 38, width: 782, height: 70 };
 
   drawCard(page, generalCard, theme.white, theme.softBorder);
   let generalPlacement: ImagePlacement | undefined;
@@ -1160,31 +1132,16 @@ async function drawStepPage(
   });
 
   if (hasExpectedResult) {
-    drawCard(page, resolvedExpectedCard, theme.white, theme.softBorder);
-    page.drawCircle({ x: resolvedExpectedCard.x + 18, y: resolvedExpectedCard.y + resolvedExpectedCard.height - 18, size: 5, color: hexToRgb(theme.green) });
-    drawLabel(page, 'RESULTADO ESPERADO', resolvedExpectedCard.x + 30, resolvedExpectedCard.y + resolvedExpectedCard.height - 15, fonts.bold, theme.green, fonts.boldIsCustom, 8);
+    drawCard(page, expectedCard, theme.white, theme.softBorder);
+    page.drawCircle({ x: expectedCard.x + 18, y: expectedCard.y + expectedCard.height - 18, size: 5, color: hexToRgb(theme.green) });
+    drawLabel(page, 'RESULTADO ESPERADO', expectedCard.x + 30, expectedCard.y + expectedCard.height - 15, fonts.bold, theme.green, fonts.boldIsCustom, 8);
     drawTextBox(page, content.expectedResult, fonts, theme, {
-      x: resolvedExpectedCard.x + 14,
-      top: resolvedExpectedCard.y + resolvedExpectedCard.height - 30,
-      width: resolvedExpectedCard.width - 28,
+      x: expectedCard.x + 14,
+      top: expectedCard.y + expectedCard.height - 30,
+      width: expectedCard.width - 28,
       height: 34,
       preferredSize: 8.5,
       minimumSize: 7,
-      color: theme.darkText,
-      maxLines: 3,
-    });
-  }
-
-  if (hasResource) {
-    drawCard(page, resourceCard, theme.white, theme.softBorder);
-    drawLabel(page, 'PÁGINA / RECURSO', resourceCard.x + 14, resourceCard.y + resourceCard.height - 15, fonts.bold, theme.gold, fonts.boldIsCustom, 8);
-    drawTextBox(page, content.resource, fonts, theme, {
-      x: resourceCard.x + 14,
-      top: resourceCard.y + resourceCard.height - 30,
-      width: resourceCard.width - 28,
-      height: 34,
-      preferredSize: 8,
-      minimumSize: 6.5,
       color: theme.darkText,
       maxLines: 3,
     });
