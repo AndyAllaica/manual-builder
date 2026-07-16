@@ -107,6 +107,9 @@ export class CaptureSessionsService {
         title: input.title,
         description: input.description,
         framing: input.framing,
+        selectionRect: input.selectionRect,
+        viewport: input.viewport,
+        captureTarget: input.captureTarget,
         originalAsset: storedOriginalAsset,
         contextAsset: storedContextAsset,
       });

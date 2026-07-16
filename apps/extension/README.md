@@ -17,7 +17,7 @@ Este paquete contiene la extension **Manual Builder** en su etapa actual. Permit
 - Seleccionar workspaces disponibles para el usuario autenticado.
 - Crear workspaces y agregar colaboradores por nombre de usuario.
 - Definir metadatos del manual: titulo, autor y descripcion.
-- Exportar un PDF profesional A4 horizontal generado por codigo.
+- Exportar un PDF profesional A4 horizontal o vertical generado por codigo.
 - Imprimir la vista final con la herramienta nativa del navegador como respaldo.
 
 La exportacion PDF funciona dentro de la extension. El backend persiste sesiones, capturas y pasos; el proveedor configurado en la API decide si los binarios se guardan localmente o en OneDrive.
@@ -109,10 +109,12 @@ Edge reserva `ALT + SHIFT + S` para su propia herramienta. Manual Builder usa `A
 - `Crear workspace`: crear un espacio de trabajo propio.
 - `Agregar colaborador`: dar acceso a otro usuario al workspace seleccionado.
 - La sesion y cada seleccion del catalogo se guardan automaticamente.
-- `Crear manual remoto`: generar un manual remoto para la accion seleccionada.
+- `Crear manual remoto`: generar el unico manual remoto de la accion seleccionada. El boton se oculta cuando la accion ya tiene uno.
 - `Cargar manual remoto`: traer los pasos existentes del backend al editor local.
 - `Exportar PDF del sistema`: consolidar los modulos, acciones y manuales remotos del sistema seleccionado en un solo documento.
 - `Guardar datos del manual`: persistir titulo, autor y descripcion del documento.
+- `Orientacion del PDF`: elegir `Horizontal` o `Vertical`; la seleccion se aplica a la salida local y al PDF completo del sistema.
+- El encabezado y pie se toman de la configuracion de codigo y se aplican solo al PDF vertical.
 - `Exportar PDF`: abrir la pagina de generacion y descargar el documento profesional.
 - `Imprimir`: abrir el dialogo nativo como alternativa de respaldo.
 - `Exportar JSON`: descargar el borrador completo con metadatos e imagenes embebidas.
@@ -189,10 +191,13 @@ La generacion se ejecuta en `manual.html`, donde estan disponibles Canvas, Blob 
 
 Caracteristicas principales:
 
-- A4 horizontal con margenes propios, portada y una pagina por paso.
+- A4 horizontal o vertical con composiciones especificas, portada y una pagina por paso.
 - La descripcion del paso se muestra una sola vez en `ACCION PRINCIPAL`, respetando cada linea como una vineta.
 - `PAGINA / RECURSO` aparece solo en el primer paso y usa la informacion de su captura.
 - La exportacion por sistema agrega un indice de modulos y acciones, y un breadcrumb de contexto en cada paso.
+- La captura completa remota conserva la geometria del elemento y reconstruye el cuadro rojo al exportar el sistema.
+- Encabezado y pie PNG configurados en codigo, de ancho completo, con transparencia y exclusivos de la orientacion vertical.
+- La orientacion elegida se conserva en `browser.storage.local`; horizontal sigue siendo el valor predeterminado.
 - Paleta roja, blanca, dorada y acentos verdes para resultados.
 - Captura general sin deformacion, detalle contextual y placeholders cuando falta una imagen.
 - JPEG, PNG y WebP; WebP se convierte mediante Canvas antes de incrustarse.
@@ -202,7 +207,11 @@ Caracteristicas principales:
 - Compatibilidad con `guide`, `annotationBaked` y alias de imagenes de JSON anteriores.
 - Progreso visible y bloqueo de exportaciones simultaneas.
 
-El codigo esta separado en `lib/pdf`: tipos, tema, texto, contenido, imagenes, generador y descarga. `generateManualPdf()` devuelve `Uint8Array`; `exportManualPdf()` genera el Blob y descarga el archivo. La exportacion individual se inicia desde `manual.html`; la consolidada por sistema usa el mismo generador directamente desde el panel.
+El codigo esta separado en `lib/pdf`: tipos, tema, texto, contenido, imagenes, generador y descarga. `generateManualPdf()` devuelve `Uint8Array`; `exportConfiguredManualPdf()` aplica la configuracion comun y descarga el archivo. La exportacion individual se inicia desde `manual.html`; la consolidada por sistema usa exactamente la misma funcion desde el panel.
+
+### Encabezado y pie vertical
+
+Coloca `header.png` y `footer.png` en `public/pdf-branding`. Las rutas, anchuras y alturas de cada banda se definen en `lib/pdf/manual-pdf.branding.config.ts`; tambien se puede reemplazar una ruta por un Data URL base64. Se recomienda PNG transparente con una relacion aproximada de 8:1 para el encabezado y 13.5:1 para el pie. El ancho completo de A4 vertical es `595.28` puntos; los anchos menores se centran y el contenido se distribuye fuera de las bandas verticales reservadas.
 
 ### Fuentes
 
@@ -219,6 +228,7 @@ La ausencia de estos archivos no bloquea la exportacion. Se utiliza Helvetica co
 - `browser.storage.session`: metadatos ligeros de la cola temporal.
 - `browser.storage.local`: borrador del manual y pasos confirmados.
 - `browser.storage.local`: configuracion de conexion al backend, token de sesion y estado de sincronizacion remota.
+- `browser.storage.local`: orientacion elegida para la exportacion PDF.
 - Backend NestJS/PostgreSQL: sesiones, capturas y pasos remotos cuando la sincronizacion esta activada.
 
 ## 10. Limitaciones actuales
@@ -229,12 +239,13 @@ La ausencia de estos archivos no bloquea la exportacion. Se utiliza Helvetica co
 - Los pasos confirmados mantienen una copia local para editar y exportar; el permiso `unlimitedStorage` evita la cuota reducida de `storage.local`.
 - El backend no recomprime los assets: OneDrive recibe el JPEG/WebP generado por la extension.
 - Helvetica cubre el espanol habitual, pero las fuentes Noto Sans son necesarias para Unicode amplio.
-- No existe todavia una plantilla corporativa configurable.
+- La marca del PDF vertical se administra en codigo; para cambiar rutas o alturas hay que reconstruir y recargar la extension.
 - La autenticacion es simple con usuario/contrasena; no es CAS ni OIDC.
 - No hay pantalla administrativa completa para usuarios; el alta se hace desde el panel o por API.
 - Al cargar un manual remoto, la extension reemplaza el borrador local actual.
 - La edicion remota actual sincroniza titulo, descripcion y resultado esperado; eliminar o reordenar pasos sigue siendo local.
 - El almacenamiento remoto depende de que la API este ejecutandose con `ASSET_STORAGE_PROVIDER=onedrive-business`.
+- Las capturas remotas creadas antes de persistir `selection_rect` y `viewport` no pueden reconstruir el cuadro rojo si tampoco existe una copia local del paso; deben recapturarse o resincronizarse.
 - No se generan archivos DOCX.
 - Firefox puede mostrar advertencias de build relacionadas con distribucion, aunque el flujo local sigue funcionando.
 
@@ -278,3 +289,6 @@ La siguiente iteracion deberia incorporar:
 24. Probar en una pagina con scroll y despues de navegar dentro de una SPA.
 25. Escribir varias acciones separadas por saltos de linea y verificar que el PDF las muestre como vinetas sin repetir la descripcion bajo el titulo.
 26. Seleccionar un sistema con manuales remotos, pulsar `Exportar PDF del sistema` y verificar el indice de modulos y acciones.
+27. Colocar `header.png` y `footer.png` en `public/pdf-branding`, exportar en vertical desde `Salida local` y desde el sistema, y comprobar que ambas los incluyan sin perder transparencia.
+28. Comprobar que `Crear manual remoto` desaparezca al seleccionar una accion que ya tenga manual.
+29. Cambiar `Orientacion del PDF` a `Vertical` y verificar tanto la salida local como la exportacion completa del sistema.

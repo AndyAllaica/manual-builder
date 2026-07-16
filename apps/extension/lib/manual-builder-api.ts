@@ -1,4 +1,9 @@
-import type { SelectedElementData } from './manual-builder';
+import type {
+  CaptureTarget,
+  SelectedElementData,
+  SelectionRect,
+  ViewportData,
+} from './manual-builder';
 
 export type RemoteManualImageFraming = 'context' | 'full';
 export type RemoteCaptureStatus = 'pending' | 'approved' | 'discarded';
@@ -100,6 +105,9 @@ export interface RemoteCaptureRecord {
   title: string;
   description: string;
   framing: RemoteManualImageFraming;
+  selectionRect: SelectionRect | null;
+  viewport: ViewportData | null;
+  captureTarget: CaptureTarget;
   status: RemoteCaptureStatus;
   originalAssetId: string;
   contextAssetId: string | null;
@@ -167,6 +175,9 @@ export interface CreateRemoteCaptureInput {
   title?: string;
   description?: string;
   framing?: RemoteManualImageFraming;
+  selectionRect?: SelectionRect | null;
+  viewport?: ViewportData | null;
+  captureTarget?: CaptureTarget;
   originalImageDataUrl: string;
   contextImageDataUrl?: string | null;
 }
@@ -515,6 +526,7 @@ export function buildRemoteCapturePayload(
   selectedElement: SelectedElementData,
   imageDataUrl: string,
   title: string,
+  captureTarget: CaptureTarget = 'element',
 ): CreateRemoteCaptureInput {
   return {
     selector: selectedElement.selector,
@@ -525,6 +537,9 @@ export function buildRemoteCapturePayload(
     title,
     description: '',
     framing: 'context',
+    selectionRect: selectedElement.rect,
+    viewport: selectedElement.viewport,
+    captureTarget,
     originalImageDataUrl: imageDataUrl,
   };
 }

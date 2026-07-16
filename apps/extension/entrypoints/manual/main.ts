@@ -1,5 +1,11 @@
 import { createEmptyManualDraft, type ManualDraft, type ManualStep } from '../../lib/manual-builder';
 import { loadManualDraft } from '../../lib/manual-step-state';
+import {
+  PDF_BRANDING_STORAGE_KEY,
+  createEmptyPdfBrandingSettings,
+  loadPdfBrandingSettings,
+  type PdfBrandingSettings,
+} from '../../lib/pdf-branding-state';
 import type { ManualPdfProgress } from '../../lib/pdf/manual-pdf.types';
 import './style.css';
 
@@ -7,6 +13,7 @@ const shouldAutoPrint = new URLSearchParams(window.location.search).get('print')
 const shouldAutoExportPdf = new URLSearchParams(window.location.search).get('exportPdf') === '1';
 
 let currentDraft: ManualDraft = createEmptyManualDraft();
+let currentPdfBranding: PdfBrandingSettings = createEmptyPdfBrandingSettings();
 let hasAutoPrinted = false;
 let hasAutoExportedPdf = false;
 let pdfExportInProgress = false;
@@ -48,7 +55,10 @@ async function initializePage(): Promise<void> {
       return;
     }
 
-    if (!Object.prototype.hasOwnProperty.call(changes, 'manualBuilderDraft')) {
+    if (
+      !Object.prototype.hasOwnProperty.call(changes, 'manualBuilderDraft') &&
+      !Object.prototype.hasOwnProperty.call(changes, PDF_BRANDING_STORAGE_KEY)
+    ) {
       return;
     }
 
@@ -59,7 +69,10 @@ async function initializePage(): Promise<void> {
 }
 
 async function refreshView(): Promise<void> {
-  currentDraft = await loadManualDraft();
+  [currentDraft, currentPdfBranding] = await Promise.all([
+    loadManualDraft(),
+    loadPdfBrandingSettings(),
+  ]);
   render();
   void maybeAutoPrint();
   void maybeAutoExportPdf();
@@ -115,13 +128,10 @@ async function handlePdfExport(): Promise<void> {
   });
 
   try {
-    const { exportManualPdf } = await import('../../lib/pdf/manual-pdf.download');
-    await exportManualPdf(currentDraft, {
-      includeCover: true,
-      drawSelectionHighlight: 'auto',
-      imageQuality: 0.94,
-      maxImageDimension: 2560,
+    const { exportConfiguredManualPdf } = await import('../../lib/pdf/manual-pdf.download');
+    await exportConfiguredManualPdf(currentDraft, {
       fileName: currentDraft.title,
+      orientation: currentPdfBranding.orientation,
       fontUrls: {
         regular: getRuntimeUrl('/fonts/NotoSans-Regular.ttf'),
         bold: getRuntimeUrl('/fonts/NotoSans-Bold.ttf'),

@@ -1,5 +1,6 @@
 export type AssetStorageProvider = 'local' | 'onedrive-business' | 'sharepoint-library';
 export type ManualImageFraming = 'context' | 'full';
+export type CaptureTarget = 'element' | 'viewport';
 export type CaptureReviewStatus = 'pending' | 'approved' | 'discarded';
 export type CaptureSessionStatus = 'open' | 'in_review' | 'closed';
 export type ManualStatus = 'draft' | 'published' | 'archived';
@@ -94,11 +95,27 @@ export interface CaptureRecord {
   title: string;
   description: string;
   framing: ManualImageFraming;
+  selectionRect: CaptureSelectionRect | null;
+  viewport: CaptureViewport | null;
+  captureTarget: CaptureTarget;
   status: CaptureReviewStatus;
   originalAssetId: string;
   contextAssetId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CaptureSelectionRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface CaptureViewport {
+  width: number;
+  height: number;
+  devicePixelRatio: number;
 }
 
 export interface ManualRecord {
@@ -211,6 +228,9 @@ export interface CreateCaptureInput {
   title?: string;
   description?: string;
   framing: ManualImageFraming;
+  selectionRect?: CaptureSelectionRect | null;
+  viewport?: CaptureViewport | null;
+  captureTarget?: CaptureTarget;
   originalAsset: StoredAssetInput;
   contextAsset?: StoredAssetInput | null;
 }

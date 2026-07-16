@@ -1,4 +1,5 @@
 import type {
+  CaptureTarget,
   ManualDraft,
   ManualStepHierarchy,
   ManualStepGuide,
@@ -8,6 +9,7 @@ import type {
 } from '../manual-builder';
 
 export type SelectionHighlightMode = 'auto' | 'always' | 'never';
+export type ManualPdfOrientation = 'landscape' | 'portrait';
 export type ManualPdfStage =
   | 'preparing'
   | 'loading-fonts'
@@ -38,12 +40,25 @@ export interface ManualAssetResolver {
   getDataUrl(assetId: string): Promise<string | undefined>;
 }
 
+export interface ManualPdfBrandingLayout {
+  headerWidth: number;
+  headerHeight: number;
+  footerWidth: number;
+  footerHeight: number;
+  footerOffsetY: number;
+  contentGap: number;
+}
+
 export interface ManualPdfOptions {
+  orientation?: ManualPdfOrientation;
   includeCover?: boolean;
   drawSelectionHighlight?: SelectionHighlightMode;
   imageQuality?: number;
   maxImageDimension?: number;
   fileName?: string;
+  headerImageDataUrl?: string | null;
+  footerImageDataUrl?: string | null;
+  portraitBrandingLayout?: Partial<ManualPdfBrandingLayout>;
   fontUrls?: {
     regular?: string;
     bold?: string;
@@ -88,6 +103,7 @@ export interface CompatibleManualStep {
   selectedElement?: CompatibleSelectedElement;
   rect?: SelectionRect;
   viewport?: ViewportData;
+  captureTarget?: CaptureTarget;
   annotationBaked?: boolean;
   guide?: ManualStepGuide;
   hierarchy?: Partial<ManualStepHierarchy>;
@@ -128,6 +144,7 @@ export interface ResolvedManualStep {
   contextImageAssetId: string | undefined;
   contextRegion: SelectionRect | undefined;
   selectedElement: CompatibleSelectedElement;
+  captureTarget: CaptureTarget | undefined;
   annotationBaked: boolean | undefined;
   guide: ManualStepGuide | undefined;
   hierarchy: ManualStepHierarchy | undefined;

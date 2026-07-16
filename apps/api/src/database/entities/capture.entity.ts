@@ -1,7 +1,13 @@
 import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 import { CaptureSessionEntity } from './capture-session.entity';
 import { AssetEntity } from './asset.entity';
-import { type CaptureReviewStatus, type ManualImageFraming } from '../../domain/manual-builder.types';
+import {
+  type CaptureReviewStatus,
+  type CaptureSelectionRect,
+  type CaptureTarget,
+  type CaptureViewport,
+  type ManualImageFraming,
+} from '../../domain/manual-builder.types';
 
 @Entity({ name: 'captures' })
 export class CaptureEntity {
@@ -34,6 +40,15 @@ export class CaptureEntity {
 
   @Column({ type: 'varchar', length: 20 })
   framing!: ManualImageFraming;
+
+  @Column({ name: 'selection_rect', type: 'jsonb', nullable: true })
+  selectionRect!: CaptureSelectionRect | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  viewport!: CaptureViewport | null;
+
+  @Column({ name: 'capture_target', type: 'varchar', length: 20, default: 'element' })
+  captureTarget!: CaptureTarget;
 
   @Column({ type: 'varchar', length: 20 })
   status!: CaptureReviewStatus;

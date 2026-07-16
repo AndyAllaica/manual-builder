@@ -108,6 +108,7 @@ export interface ManualStep {
   contextRegion: SelectionRect;
   createdAt: string;
   updatedAt?: string;
+  captureTarget?: CaptureTarget;
   annotationBaked?: boolean;
   guide?: ManualStepGuide;
   hierarchy?: ManualStepHierarchy;
@@ -286,6 +287,7 @@ export function createManualStep(input: {
     selectedElement: capture.selectedElement,
     contextRegion: capture.contextRegion,
     createdAt: new Date().toISOString(),
+    captureTarget: capture.captureTarget,
     annotationBaked: capture.captureTarget === 'viewport',
     remoteManualId: capture.remoteManualId,
     remoteCaptureId: capture.remoteCaptureId,
@@ -538,6 +540,7 @@ function normalizeManualStep(step: ManualStep): ManualStep {
   return {
     ...step,
     ...(normalizedGuide === undefined ? {} : { guide: normalizedGuide }),
+    captureTarget: resolveManualStepCaptureTarget(step),
     annotationBaked: step.annotationBaked === true,
     remoteManualId: normalizeNullableString(step.remoteManualId),
     remoteCaptureId: normalizeNullableString(step.remoteCaptureId),
@@ -545,6 +548,21 @@ function normalizeManualStep(step: ManualStep): ManualStep {
     remoteSyncStatus: step.remoteSyncStatus ?? 'idle',
     remoteSyncError: normalizeNullableString(step.remoteSyncError),
   };
+}
+
+function resolveManualStepCaptureTarget(step: ManualStep): CaptureTarget {
+  if (step.captureTarget === 'viewport' || step.captureTarget === 'element') {
+    return step.captureTarget;
+  }
+
+  const { rect, viewport } = step.selectedElement;
+  const isViewportSelection = step.selector === 'html'
+    && rect.x <= 1
+    && rect.y <= 1
+    && rect.width >= viewport.width - 2
+    && rect.height >= viewport.height - 2;
+
+  return isViewportSelection ? 'viewport' : 'element';
 }
 
 function normalizeManualStepGuide(guide: ManualStepGuide | undefined): ManualStepGuide | undefined {

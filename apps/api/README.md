@@ -7,7 +7,7 @@ Backend NestJS para `manual-builder` con persistencia real en PostgreSQL y almac
 En esta etapa el API ya permite:
 
 - Mantener el catalogo `workspace > sistemas > modulos > acciones`.
-- Crear manuales persistentes por accion.
+- Crear un unico manual persistente por accion.
 - Abrir sesiones de captura.
 - Guardar capturas recibidas desde la extension como archivos reales en disco local o OneDrive institucional.
 - Registrar capturas pendientes, aprobadas o descartadas.
@@ -163,9 +163,12 @@ Para una base que ya existe y no usa `DB_SYNCHRONIZE=true`, aplica tambien:
 ```text
 apps/api/database/2026-07-12-auth-workspaces.sql
 apps/api/database/add-expected-result.sql
+apps/api/database/2026-07-15-capture-selection-geometry.sql
 ```
 
-Si dejas `DB_SYNCHRONIZE=true`, TypeORM crea las tablas `users` y `workspace_members` al levantar el backend. En bases institucionales conviene usar el SQL y luego mantener `DB_SYNCHRONIZE=false`.
+La ultima migracion agrega `selection_rect`, `viewport` y `capture_target` a `captures`. Estos datos permiten volver a dibujar el cuadro rojo sobre la captura completa al generar un PDF desde informacion remota. Las filas anteriores quedan con geometria nula porque ese dato no puede inferirse de forma segura.
+
+Si dejas `DB_SYNCHRONIZE=true`, TypeORM ajusta estas columnas al levantar el backend. En bases institucionales conviene aplicar los SQL y luego mantener `DB_SYNCHRONIZE=false`.
 
 ## Instalacion
 

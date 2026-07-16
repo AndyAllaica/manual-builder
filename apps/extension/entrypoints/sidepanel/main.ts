@@ -48,6 +48,14 @@ import {
 import type { ManualSystemStructure } from '../../lib/pdf/manual-pdf.types';
 import { loadPanelState, savePanelState } from '../../lib/panel-state';
 import { loadManualDraft, resetManualDraft, saveManualDraft } from '../../lib/manual-step-state';
+import { inferLegacySelectionGeometry } from '../../lib/legacy-selection-geometry';
+import {
+  PDF_BRANDING_STORAGE_KEY,
+  createEmptyPdfBrandingSettings,
+  loadPdfBrandingSettings,
+  savePdfBrandingSettings,
+  type PdfBrandingSettings,
+} from '../../lib/pdf-branding-state';
 import './style.css';
 
 type PreviewMode = 'context' | 'full';
@@ -100,7 +108,6 @@ interface SystemPdfExportDocument extends ManualDraft {
 }
 
 type SystemExportState = 'idle' | 'working' | 'completed' | 'error';
-
 const MANUAL_PAGE_PATH = '/manual.html' as const;
 const DEFAULT_REMOTE_FRAMING = 'context' as const;
 const STORED_IMAGE_QUALITY = 0.95;
@@ -109,6 +116,7 @@ const CONTEXT_IMAGE_QUALITY = 0.94;
 let currentState: CapturePanelState = createEmptyPanelState();
 let currentDraft: ManualDraft = createEmptyManualDraft();
 let currentBackendSettings: BackendSyncSettings = createEmptyBackendSyncSettings();
+let currentPdfBranding: PdfBrandingSettings = createEmptyPdfBrandingSettings();
 let selectedCaptureId: string | null = null;
 let selectedStepId: string | null = null;
 let draggedStepId: string | null = null;
@@ -153,7 +161,6 @@ let collaboratorUsernameDraft = '';
 let collaboratorRoleDraft: RemoteWorkspaceMemberRole = 'editor';
 let systemExportState: SystemExportState = 'idle';
 let systemExportMessage = '';
-
 const captureImageCache = new Map<string, Promise<HTMLImageElement>>();
 
 const statusBadge = queryElement<HTMLSpanElement>('status-badge');
@@ -242,6 +249,7 @@ const manualAuthorInput = queryElement<HTMLInputElement>('manual-author-input');
 const manualDescriptionInput = queryElement<HTMLTextAreaElement>('manual-description-input');
 const saveManualMetaButton = queryElement<HTMLButtonElement>('save-manual-meta-button');
 const openPrintViewButton = queryElement<HTMLButtonElement>('open-print-view-button');
+const pdfOrientationSelect = queryElement<HTMLSelectElement>('pdf-orientation-select');
 
 void initializeSidePanel();
 
@@ -488,6 +496,18 @@ async function initializeSidePanel(): Promise<void> {
     });
   });
 
+  pdfOrientationSelect.addEventListener('change', () => {
+    const orientation = pdfOrientationSelect.value === 'portrait' ? 'portrait' : 'landscape';
+    void runPanelAction(async () => {
+      const nextSettings: PdfBrandingSettings = {
+        ...currentPdfBranding,
+        orientation,
+      };
+      await savePdfBrandingSettings(nextSettings);
+      currentPdfBranding = nextSettings;
+    });
+  });
+
   stepTitleInput.addEventListener('input', () => {
     stepFormTitle = stepTitleInput.value;
     stepFormDirty = true;
@@ -531,7 +551,8 @@ async function initializeSidePanel(): Promise<void> {
       areaName === 'local' &&
       (
         Object.prototype.hasOwnProperty.call(changes, MANUAL_DRAFT_STORAGE_KEY) ||
-        Object.prototype.hasOwnProperty.call(changes, BACKEND_SYNC_SETTINGS_STORAGE_KEY)
+        Object.prototype.hasOwnProperty.call(changes, BACKEND_SYNC_SETTINGS_STORAGE_KEY) ||
+        Object.prototype.hasOwnProperty.call(changes, PDF_BRANDING_STORAGE_KEY)
       );
 
     if (!watchedSessionChange && !watchedLocalChange) {
@@ -546,15 +567,17 @@ async function initializeSidePanel(): Promise<void> {
 }
 
 async function refreshState(): Promise<void> {
-  const [panelState, manualDraft, backendSettings] = await Promise.all([
+  const [panelState, manualDraft, backendSettings, pdfBranding] = await Promise.all([
     loadPanelState(),
     loadManualDraft(),
     loadBackendSyncSettings(),
+    loadPdfBrandingSettings(),
   ]);
 
   currentState = panelState;
   currentDraft = manualDraft;
   currentBackendSettings = backendSettings;
+  currentPdfBranding = pdfBranding;
 
   if (
     selectedCaptureId === null ||
@@ -630,7 +653,13 @@ function render(): void {
   renderStepEditor(selectedStep);
   renderStepsList(selectedStep);
   renderManualMetaForm();
+  renderPdfBrandingSettings();
   renderExportState();
+}
+
+function renderPdfBrandingSettings(): void {
+  pdfOrientationSelect.value = currentPdfBranding.orientation;
+  pdfOrientationSelect.disabled = panelBusy;
 }
 
 function renderCaptureModeButton(): void {
@@ -700,7 +729,9 @@ function renderBackendSyncSection(): void {
     hasWorkspaceDraft &&
     backendStartedByDraft.trim().length > 0 &&
     backendActionIdDraft.trim().length > 0;
-  const canCreateRemoteManual = hasConnectionDraft && getEffectiveManualTitle().length > 0;
+  const selectedAction = getSelectedRemoteAction();
+  const actionAlreadyHasManual = backendManuals.length > 0 || (selectedAction?.manualCount ?? 0) > 0;
+  const canCreateRemoteManual = hasConnectionDraft && !actionAlreadyHasManual && getEffectiveManualTitle().length > 0;
   const canLoadRemoteManual = hasConnectionDraft && backendManualIdDraft.trim().length > 0;
   const canExportSystem = hasApiUrlDraft && isAuthenticated && backendSystemIdDraft.trim().length > 0;
   const canLogin = hasApiUrlDraft && backendUsernameDraft.trim().length >= 2 && backendPasswordDraft.length >= 6;
@@ -714,6 +745,7 @@ function renderBackendSyncSection(): void {
 
   backendLoginButton.disabled = panelBusy || !canLogin;
   backendRegisterButton.disabled = panelBusy || !canLogin;
+  createRemoteManualButton.hidden = actionAlreadyHasManual;
   createRemoteManualButton.disabled = panelBusy || !canCreateRemoteManual;
   loadRemoteManualButton.disabled = panelBusy || !canLoadRemoteManual;
   exportSystemPdfButton.disabled = panelBusy || !canExportSystem;
@@ -2095,13 +2127,10 @@ async function handleExportSystemPdf(): Promise<void> {
       throw new Error('El sistema seleccionado no tiene pasos guardados para exportar.');
     }
 
-    const { exportManualPdf } = await import('../../lib/pdf/manual-pdf.download');
-    await exportManualPdf(systemDocument, {
-      includeCover: true,
-      drawSelectionHighlight: 'auto',
-      imageQuality: 0.94,
-      maxImageDimension: 2560,
+    const { exportConfiguredManualPdf } = await import('../../lib/pdf/manual-pdf.download');
+    await exportConfiguredManualPdf(systemDocument, {
       fileName: systemDocument.title,
+      orientation: currentPdfBranding.orientation,
       fontUrls: {
         regular: getRuntimeUrl('/fonts/NotoSans-Regular.ttf'),
         bold: getRuntimeUrl('/fonts/NotoSans-Bold.ttf'),
@@ -2340,7 +2369,30 @@ async function buildManualStepFromRemoteStep(
     remoteStep.sourceCapture?.contextAsset ?? remoteStep.asset,
     apiBaseUrl,
   );
-  const selectedElement = buildSelectedElementFromRemoteStep(remoteStep);
+  const localStep = currentDraft.steps.find((step) => step.remoteStepId === remoteStep.id);
+  let selectedElement = buildSelectedElementFromRemoteStep(remoteStep, localStep?.selectedElement);
+  let hasSelectionGeometry = hasRemoteSelectionGeometry(remoteStep)
+    || (
+      isValidRemoteSelectionRect(localStep?.selectedElement.rect)
+      && isValidRemoteViewport(localStep?.selectedElement.viewport)
+    );
+  if (!hasSelectionGeometry && remoteStep.sourceCapture?.captureTarget !== 'viewport') {
+    const inferredGeometry = await inferLegacySelectionGeometry(
+      originalAsset.dataUrl,
+      contextAsset.dataUrl,
+    ).catch(() => null);
+    if (inferredGeometry !== null) {
+      selectedElement = {
+        ...selectedElement,
+        rect: inferredGeometry.rect,
+        viewport: inferredGeometry.viewport,
+      };
+      hasSelectionGeometry = true;
+    }
+  }
+  const captureTarget = remoteStep.sourceCapture?.captureTarget
+    ?? localStep?.captureTarget
+    ?? (hasSelectionGeometry ? 'element' : undefined);
 
   return {
     id: crypto.randomUUID(),
@@ -2360,7 +2412,8 @@ async function buildManualStepFromRemoteStep(
     selectedElement,
     contextRegion: selectedElement.rect,
     createdAt: remoteStep.createdAt,
-    annotationBaked: true,
+    ...(captureTarget === undefined ? {} : { captureTarget }),
+    annotationBaked: !hasSelectionGeometry || remoteStep.sourceCapture?.captureTarget === 'viewport',
     remoteManualId: manualId,
     remoteCaptureId: remoteStep.sourceCaptureId,
     remoteStepId: remoteStep.id,
@@ -2369,7 +2422,19 @@ async function buildManualStepFromRemoteStep(
   };
 }
 
-function buildSelectedElementFromRemoteStep(remoteStep: RemoteManualStepWithAsset): SelectedElementData {
+function buildSelectedElementFromRemoteStep(
+  remoteStep: RemoteManualStepWithAsset,
+  fallback?: SelectedElementData,
+): SelectedElementData {
+  const remoteSelectionRect = remoteStep.sourceCapture?.selectionRect;
+  const remoteViewport = remoteStep.sourceCapture?.viewport;
+  const selectionRect = isValidRemoteSelectionRect(remoteSelectionRect)
+    ? remoteSelectionRect
+    : fallback?.rect;
+  const viewport = isValidRemoteViewport(remoteViewport)
+    ? remoteViewport
+    : fallback?.viewport;
+
   return {
     tagName: remoteStep.selectedElementTag,
     id: null,
@@ -2377,18 +2442,39 @@ function buildSelectedElementFromRemoteStep(remoteStep: RemoteManualStepWithAsse
     selector: remoteStep.selector,
     url: remoteStep.pageUrl,
     pageTitle: remoteStep.pageTitle,
-    rect: {
-      x: 0,
-      y: 0,
-      width: 1,
-      height: 1,
-    },
-    viewport: {
-      width: 1,
-      height: 1,
-      devicePixelRatio: 1,
-    },
+    rect: isValidRemoteSelectionRect(selectionRect)
+      ? selectionRect
+      : { x: 0, y: 0, width: 1, height: 1 },
+    viewport: isValidRemoteViewport(viewport)
+      ? viewport
+      : { width: 1, height: 1, devicePixelRatio: 1 },
   };
+}
+
+function hasRemoteSelectionGeometry(remoteStep: RemoteManualStepWithAsset): boolean {
+  return isValidRemoteSelectionRect(remoteStep.sourceCapture?.selectionRect)
+    && isValidRemoteViewport(remoteStep.sourceCapture?.viewport);
+}
+
+function isValidRemoteSelectionRect(value: SelectionRect | null | undefined): value is SelectionRect {
+  return value !== null
+    && value !== undefined
+    && [value.x, value.y, value.width, value.height].every(Number.isFinite)
+    && value.width > 0
+    && value.height > 0;
+}
+
+function isValidRemoteViewport(
+  value: SelectedElementData['viewport'] | null | undefined,
+): value is SelectedElementData['viewport'] {
+  return value !== null
+    && value !== undefined
+    && Number.isFinite(value.width)
+    && Number.isFinite(value.height)
+    && Number.isFinite(value.devicePixelRatio)
+    && value.width > 1
+    && value.height > 1
+    && value.devicePixelRatio > 0;
 }
 
 async function fetchRemoteAssetAsImageAsset(
@@ -2596,7 +2682,12 @@ async function syncConfirmedStepToBackend(
     const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
     const sessionId = await ensureRemoteSessionId(client, settings);
     const createdCapture = await client.createCapture(sessionId, {
-      ...buildRemoteCapturePayload(capture.selectedElement, capture.imageDataUrl, step.title),
+      ...buildRemoteCapturePayload(
+        capture.selectedElement,
+        capture.imageDataUrl,
+        step.title,
+        capture.captureTarget,
+      ),
       description: step.description,
       framing: DEFAULT_REMOTE_FRAMING,
       contextImageDataUrl: capture.captureTarget === 'viewport' ? null : contextAsset.dataUrl,

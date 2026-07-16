@@ -1,5 +1,47 @@
-import { IsEnum, IsOptional, IsString, IsUrl, MaxLength, Matches } from 'class-validator';
-import { type ManualImageFraming } from '../../domain/manual-builder.types';
+import { Type } from 'class-transformer';
+import {
+  IsEnum,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUrl,
+  MaxLength,
+  Matches,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+import { type CaptureTarget, type ManualImageFraming } from '../../domain/manual-builder.types';
+
+class CaptureSelectionRectDto {
+  @IsNumber()
+  x!: number;
+
+  @IsNumber()
+  y!: number;
+
+  @IsNumber()
+  @Min(0.01)
+  width!: number;
+
+  @IsNumber()
+  @Min(0.01)
+  height!: number;
+}
+
+class CaptureViewportDto {
+  @IsNumber()
+  @Min(0.01)
+  width!: number;
+
+  @IsNumber()
+  @Min(0.01)
+  height!: number;
+
+  @IsNumber()
+  @Min(0.01)
+  devicePixelRatio!: number;
+}
 
 export class CreateCaptureDto {
   @IsString()
@@ -36,6 +78,20 @@ export class CreateCaptureDto {
   @IsOptional()
   @IsEnum(['context', 'full'])
   framing?: ManualImageFraming;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CaptureSelectionRectDto)
+  selectionRect?: CaptureSelectionRectDto | null;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CaptureViewportDto)
+  viewport?: CaptureViewportDto | null;
+
+  @IsOptional()
+  @IsIn(['element', 'viewport'])
+  captureTarget?: CaptureTarget;
 
   @Matches(/^data:image\/[a-z0-9.+-]+;base64,/i)
   originalImageDataUrl!: string;

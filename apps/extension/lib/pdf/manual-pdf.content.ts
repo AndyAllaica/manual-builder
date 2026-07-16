@@ -195,6 +195,9 @@ function resolveStep(step: CompatibleManualStep, index: number): ResolvedManualS
     contextImageAssetId: optionalString(step.contextImageAssetId),
     contextRegion: validRect(step.contextRegion) ? step.contextRegion : undefined,
     selectedElement,
+    captureTarget: step.captureTarget === 'viewport' || step.captureTarget === 'element'
+      ? step.captureTarget
+      : undefined,
     annotationBaked: typeof step.annotationBaked === 'boolean' ? step.annotationBaked : undefined,
     guide: step.guide,
     hierarchy: resolveStepHierarchy(step.hierarchy),

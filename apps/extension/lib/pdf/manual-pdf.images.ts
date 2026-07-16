@@ -11,6 +11,7 @@ import type {
 export interface ImageProcessingOptions {
   maxImageDimension: number;
   imageQuality: number;
+  preserveTransparency?: boolean;
 }
 
 export interface PreparedStepImages {
@@ -170,8 +171,10 @@ export async function processDataUrl(
       throw new Error('No se pudo crear el contexto de imagen.');
     }
 
-    context.fillStyle = '#FFFFFF';
-    context.fillRect(0, 0, targetWidth, targetHeight);
+    if (options.preserveTransparency !== true) {
+      context.fillStyle = '#FFFFFF';
+      context.fillRect(0, 0, targetWidth, targetHeight);
+    }
     context.drawImage(
       source.image,
       crop?.x ?? 0,
@@ -184,7 +187,7 @@ export async function processDataUrl(
       targetHeight,
     );
 
-    const preservePng = blob.type === 'image/png';
+    const preservePng = options.preserveTransparency === true || blob.type === 'image/png';
     const outputBlob = await canvasToBlob(
       canvas,
       preservePng ? 'image/png' : 'image/jpeg',

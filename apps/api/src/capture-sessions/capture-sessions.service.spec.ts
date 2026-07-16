@@ -42,6 +42,9 @@ describe('CaptureSessionsService', () => {
         title: 'Guardar cambios',
         description: '',
         framing: 'full',
+        selectionRect: { x: 120, y: 80, width: 240, height: 48 },
+        viewport: { width: 1440, height: 900, devicePixelRatio: 1.25 },
+        captureTarget: 'element',
         originalImageDataUrl: 'data:image/jpeg;base64,b3JpZ2luYWw=',
         contextImageDataUrl: 'data:image/webp;base64,Y29udGV4dA==',
       },
@@ -60,6 +63,9 @@ describe('CaptureSessionsService', () => {
     expect(repository.createCapture).toHaveBeenCalledWith(
       'session-id',
       expect.objectContaining({
+        selectionRect: { x: 120, y: 80, width: 240, height: 48 },
+        viewport: { width: 1440, height: 900, devicePixelRatio: 1.25 },
+        captureTarget: 'element',
         originalAsset,
         contextAsset,
       }),

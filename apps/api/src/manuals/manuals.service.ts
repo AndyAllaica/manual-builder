@@ -17,6 +17,11 @@ export class ManualsService {
       await this.repository.getWorkspaceIdByActionId(input.actionId),
     );
 
+    const existingManuals = await this.repository.listManualsByActionId(input.actionId);
+    if (existingManuals.length > 0) {
+      throw new ConflictException('La accion seleccionada ya tiene un manual. Carga el manual existente en lugar de crear otro.');
+    }
+
     return this.repository.createManual({
       ...input,
       createdBy: user.displayName || user.username,

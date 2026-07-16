@@ -51,6 +51,9 @@ export class CaptureSessionsController {
       title: body.title,
       description: body.description,
       framing: body.framing ?? 'full',
+      selectionRect: body.selectionRect ?? null,
+      viewport: body.viewport ?? null,
+      captureTarget: body.captureTarget ?? 'element',
       originalImageDataUrl: body.originalImageDataUrl,
       contextImageDataUrl: body.contextImageDataUrl ?? null,
     });
