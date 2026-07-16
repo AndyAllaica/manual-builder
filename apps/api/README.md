@@ -164,9 +164,10 @@ Para una base que ya existe y no usa `DB_SYNCHRONIZE=true`, aplica tambien:
 apps/api/database/2026-07-12-auth-workspaces.sql
 apps/api/database/add-expected-result.sql
 apps/api/database/2026-07-15-capture-selection-geometry.sql
+apps/api/database/2026-07-16-capture-annotation-baked.sql
 ```
 
-La ultima migracion agrega `selection_rect`, `viewport` y `capture_target` a `captures`. Estos datos permiten volver a dibujar el cuadro rojo sobre la captura completa al generar un PDF desde informacion remota. Las filas anteriores quedan con geometria nula porque ese dato no puede inferirse de forma segura.
+Las dos ultimas migraciones agregan la geometria de seleccion y `annotation_baked`. Las capturas nuevas guardan el cuadro rojo dentro del asset original y registran `annotation_baked=true`; las filas anteriores conservan `false` para continuar usando el resaltado calculado durante la exportacion.
 
 Si dejas `DB_SYNCHRONIZE=true`, TypeORM ajusta estas columnas al levantar el backend. En bases institucionales conviene aplicar los SQL y luego mantener `DB_SYNCHRONIZE=false`.
 

@@ -110,6 +110,7 @@ export class CaptureSessionsService {
         selectionRect: input.selectionRect,
         viewport: input.viewport,
         captureTarget: input.captureTarget,
+        annotationBaked: input.annotationBaked,
         originalAsset: storedOriginalAsset,
         contextAsset: storedContextAsset,
       });

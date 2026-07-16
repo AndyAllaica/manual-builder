@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsIn,
   IsNumber,
@@ -92,6 +93,10 @@ export class CreateCaptureDto {
   @IsOptional()
   @IsIn(['element', 'viewport'])
   captureTarget?: CaptureTarget;
+
+  @IsOptional()
+  @IsBoolean()
+  annotationBaked?: boolean;
 
   @Matches(/^data:image\/[a-z0-9.+-]+;base64,/i)
   originalImageDataUrl!: string;

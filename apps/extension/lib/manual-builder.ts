@@ -81,6 +81,7 @@ export interface CapturedSelectionRecord {
   contextRegion: SelectionRect;
   redactionRegions: ImageRedactionRegion[];
   captureTarget: CaptureTarget;
+  annotationBaked: boolean;
   tabId: number | null;
   windowId: number | null;
   remoteSessionId: string | null;
@@ -252,6 +253,7 @@ export function createCapturedSelectionRecord(
     contextRegion: buildContextRegion(selectedElement),
     redactionRegions: [],
     captureTarget,
+    annotationBaked: captureTarget === 'viewport',
     tabId,
     windowId,
     remoteSessionId: null,
@@ -288,7 +290,7 @@ export function createManualStep(input: {
     contextRegion: capture.contextRegion,
     createdAt: new Date().toISOString(),
     captureTarget: capture.captureTarget,
-    annotationBaked: capture.captureTarget === 'viewport',
+    annotationBaked: capture.annotationBaked || capture.captureTarget === 'viewport',
     remoteManualId: capture.remoteManualId,
     remoteCaptureId: capture.remoteCaptureId,
     remoteSyncStatus: capture.remoteSyncStatus,
@@ -494,6 +496,7 @@ function normalizeCapturedSelectionRecord(capture: CapturedSelectionRecord): Cap
   return {
     ...capture,
     captureTarget: capture.captureTarget === 'viewport' ? 'viewport' : 'element',
+    annotationBaked: capture.annotationBaked === true,
     redactionRegions: normalizeImageRedactionRegions(capture.redactionRegions),
     remoteSessionId: normalizeNullableString(capture.remoteSessionId),
     remoteCaptureId: normalizeNullableString(capture.remoteCaptureId),

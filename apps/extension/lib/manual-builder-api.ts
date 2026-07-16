@@ -108,6 +108,7 @@ export interface RemoteCaptureRecord {
   selectionRect: SelectionRect | null;
   viewport: ViewportData | null;
   captureTarget: CaptureTarget;
+  annotationBaked: boolean;
   status: RemoteCaptureStatus;
   originalAssetId: string;
   contextAssetId: string | null;
@@ -178,6 +179,7 @@ export interface CreateRemoteCaptureInput {
   selectionRect?: SelectionRect | null;
   viewport?: ViewportData | null;
   captureTarget?: CaptureTarget;
+  annotationBaked?: boolean;
   originalImageDataUrl: string;
   contextImageDataUrl?: string | null;
 }
@@ -527,6 +529,7 @@ export function buildRemoteCapturePayload(
   imageDataUrl: string,
   title: string,
   captureTarget: CaptureTarget = 'element',
+  annotationBaked = false,
 ): CreateRemoteCaptureInput {
   return {
     selector: selectedElement.selector,
@@ -540,6 +543,7 @@ export function buildRemoteCapturePayload(
     selectionRect: selectedElement.rect,
     viewport: selectedElement.viewport,
     captureTarget,
+    annotationBaked,
     originalImageDataUrl: imageDataUrl,
   };
 }

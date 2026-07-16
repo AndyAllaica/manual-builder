@@ -68,6 +68,12 @@ interface PortraitContentBounds {
   bottom: number;
 }
 
+interface StepPageNumbering {
+  current: number;
+  total: number;
+  documentCurrent: number;
+}
+
 const DEFAULT_IMAGE_QUALITY = 0.94;
 const DEFAULT_MAX_IMAGE_DIMENSION = 2560;
 const DEFAULT_PORTRAIT_BRANDING_LAYOUT: ManualPdfBrandingLayout = {
@@ -124,10 +130,12 @@ export async function generateManualPdf(
   const structurePageCount = manual.structure === undefined
     ? 0
     : drawSystemStructurePages(document, manual.structure, fonts, theme, branding);
+  const stepPageNumbering = buildStepPageNumbering(manual);
 
   for (let index = 0; index < manual.steps.length; index += 1) {
     const step = manual.steps[index]!;
     const current = index + 1;
+    const numbering = stepPageNumbering[index]!;
     reportProgress(options, {
       current,
       total,
@@ -148,8 +156,7 @@ export async function generateManualPdf(
       step,
       resolveStepContent(step),
       images,
-      current,
-      total,
+      numbering,
       coverPageCount + structurePageCount,
       fonts,
       theme,
@@ -180,6 +187,67 @@ function resolvePdfTheme(options: ManualPdfOptions): ManualPdfTheme {
 
 function isPortraitTheme(theme: ManualPdfTheme): boolean {
   return theme.pageHeight > theme.pageWidth;
+}
+
+function buildStepPageNumbering(manual: ResolvedManual): StepPageNumbering[] {
+  const numbering = manual.steps.map((_, index) => ({
+    current: index + 1,
+    total: manual.steps.length,
+    documentCurrent: index + 1,
+  }));
+
+  if (manual.structure === undefined) {
+    return numbering;
+  }
+
+  let groupStart = 0;
+  while (groupStart < manual.steps.length) {
+    const groupKey = getStepHierarchyGroupKey(manual.steps[groupStart]!);
+    if (groupKey === null) {
+      groupStart += 1;
+      continue;
+    }
+
+    let groupEnd = groupStart + 1;
+    while (
+      groupEnd < manual.steps.length
+      && getStepHierarchyGroupKey(manual.steps[groupEnd]!) === groupKey
+    ) {
+      groupEnd += 1;
+    }
+
+    const groupTotal = groupEnd - groupStart;
+    for (let index = groupStart; index < groupEnd; index += 1) {
+      numbering[index] = {
+        current: index - groupStart + 1,
+        total: groupTotal,
+        documentCurrent: index + 1,
+      };
+    }
+    groupStart = groupEnd;
+  }
+
+  return numbering;
+}
+
+function getStepHierarchyGroupKey(step: ResolvedManualStep): string | null {
+  if (step.hierarchy === undefined) {
+    return null;
+  }
+
+  return [
+    step.hierarchy.systemName,
+    step.hierarchy.moduleName,
+    step.hierarchy.actionName,
+  ].join('\u0000');
+}
+
+function getStepHeaderText(step: ResolvedManualStep): string {
+  if (step.hierarchy === undefined) {
+    return 'MANUAL DE USUARIO';
+  }
+
+  return `ACCIÓN: ${step.hierarchy.actionName} | MÓDULO: ${step.hierarchy.moduleName}`;
 }
 
 async function preparePdfBranding(
@@ -513,21 +581,31 @@ async function drawPortraitStepPage(
   step: ResolvedManualStep,
   content: ResolvedStepContent,
   images: PreparedStepImages,
-  current: number,
-  total: number,
+  numbering: StepPageNumbering,
   pageNumberOffset: number,
   fonts: PdfFonts,
   theme: ManualPdfTheme,
   options: ManualPdfOptions,
   branding: PreparedPdfBranding,
 ): Promise<void> {
+  const { current, total, documentCurrent } = numbering;
   const page = document.addPage([theme.pageWidth, theme.pageHeight]);
   const contentBounds = getPortraitContentBounds(theme, branding);
   const contentWidth = theme.pageWidth - 60;
   page.drawRectangle({ x: 0, y: 0, width: theme.pageWidth, height: theme.pageHeight, color: hexToRgb(theme.warmWhite) });
   page.drawRectangle({ x: 0, y: contentBounds.top - 12, width: theme.pageWidth, height: 12, color: hexToRgb(theme.primaryRed) });
 
-  drawLabel(page, 'MANUAL DE USUARIO', 30, contentBounds.top - 38, fonts.bold, theme.primaryRed, fonts.boldIsCustom, 8);
+  drawTextBox(page, getStepHeaderText(step), fonts, theme, {
+    x: 30,
+    top: contentBounds.top - 29,
+    width: theme.pageWidth - 140,
+    height: 14,
+    preferredSize: 8,
+    minimumSize: 6.5,
+    color: theme.primaryRed,
+    bold: true,
+    maxLines: 1,
+  });
   drawLabel(page, `PASO ${current} DE ${total}`, theme.pageWidth - 88, contentBounds.top - 38, fonts.bold, theme.mutedText, fonts.boldIsCustom, 7);
   drawTextBox(page, String(current).padStart(2, '0'), fonts, theme, {
     x: 30,
@@ -552,28 +630,8 @@ async function drawPortraitStepPage(
     maxLines: 2,
     lineHeightRatio: 1.05,
   });
-  if (step.hierarchy !== undefined) {
-    drawTextBox(
-      page,
-      `MODULO: ${step.hierarchy.moduleName} | ACCION: ${step.hierarchy.actionName} | MANUAL: ${step.hierarchy.manualTitle}`,
-      fonts,
-      theme,
-      {
-        x: 92,
-        top: contentBounds.top - 116,
-        width: theme.pageWidth - 122,
-        height: 28,
-        preferredSize: 7.5,
-        minimumSize: 6.5,
-        color: theme.mutedText,
-        bold: true,
-        maxLines: 2,
-      },
-    );
-  }
-
   const hasExpectedResult = content.expectedResult.trim().length > 0;
-  const hasResource = current === 1 && content.resource.trim().length > 0;
+  const hasResource = documentCurrent === 1 && content.resource.trim().length > 0;
   const hasBottomCards = hasExpectedResult || hasResource;
   const bottomCardY = contentBounds.bottom + 40;
   const bottomCardHeight = 75;
@@ -703,7 +761,7 @@ async function drawPortraitStepPage(
     color: theme.mutedText,
     maxLines: 1,
   });
-  drawLabel(page, `${current + pageNumberOffset}`, theme.pageWidth - 36, contentBounds.bottom + 10, fonts.bold, theme.mutedText, fonts.boldIsCustom, 7);
+  drawLabel(page, `${documentCurrent + pageNumberOffset}`, theme.pageWidth - 36, contentBounds.bottom + 10, fonts.bold, theme.mutedText, fonts.boldIsCustom, 7);
   drawPdfBranding(page, branding, theme);
 }
 
@@ -953,14 +1011,14 @@ async function drawStepPage(
   step: ResolvedManualStep,
   content: ResolvedStepContent,
   images: PreparedStepImages,
-  current: number,
-  total: number,
+  numbering: StepPageNumbering,
   pageNumberOffset: number,
   fonts: PdfFonts,
   theme: ManualPdfTheme,
   options: ManualPdfOptions,
   branding: PreparedPdfBranding,
 ): Promise<void> {
+  const { current, total, documentCurrent } = numbering;
   if (isPortraitTheme(theme)) {
     return drawPortraitStepPage(
       document,
@@ -968,8 +1026,7 @@ async function drawStepPage(
       step,
       content,
       images,
-      current,
-      total,
+      numbering,
       pageNumberOffset,
       fonts,
       theme,
@@ -982,7 +1039,17 @@ async function drawStepPage(
   page.drawRectangle({ x: 0, y: 0, width: theme.pageWidth, height: theme.pageHeight, color: hexToRgb(theme.warmWhite) });
   page.drawRectangle({ x: 0, y: theme.pageHeight - 12, width: theme.pageWidth, height: 12, color: hexToRgb(theme.primaryRed) });
 
-  drawLabel(page, 'MANUAL DE USUARIO', 30, 557, fonts.bold, theme.primaryRed, fonts.boldIsCustom, 8);
+  drawTextBox(page, getStepHeaderText(step), fonts, theme, {
+    x: 30,
+    top: 565,
+    width: 680,
+    height: 14,
+    preferredSize: 8,
+    minimumSize: 6.5,
+    color: theme.primaryRed,
+    bold: true,
+    maxLines: 1,
+  });
   drawLabel(page, `PASO ${current} DE ${total}`, 731, 557, fonts.bold, theme.mutedText, fonts.boldIsCustom, 8);
   drawTextBox(page, String(current).padStart(2, '0'), fonts, theme, {
     x: 30,
@@ -1007,28 +1074,8 @@ async function drawStepPage(
     maxLines: 2,
     lineHeightRatio: 1.05,
   });
-  if (step.hierarchy !== undefined) {
-    drawTextBox(
-      page,
-      `MODULO: ${step.hierarchy.moduleName} | ACCION: ${step.hierarchy.actionName} | MANUAL: ${step.hierarchy.manualTitle}`,
-      fonts,
-      theme,
-      {
-        x: 97,
-        top: 493,
-        width: 700,
-        height: 14,
-        preferredSize: 7.5,
-        minimumSize: 6.5,
-        color: theme.mutedText,
-        bold: true,
-        maxLines: 1,
-      },
-    );
-  }
-
   const hasExpectedResult = content.expectedResult.trim().length > 0;
-  const hasResource = current === 1 && content.resource.trim().length > 0;
+  const hasResource = documentCurrent === 1 && content.resource.trim().length > 0;
   const hasBottomCards = hasExpectedResult || hasResource;
   const mainContentBottom = hasBottomCards ? 125 : 38;
   const generalCard = { x: 30, y: mainContentBottom, width: 518, height: 480 - mainContentBottom };
@@ -1156,7 +1203,7 @@ async function drawStepPage(
     color: theme.mutedText,
     maxLines: 1,
   });
-  drawLabel(page, `${current + pageNumberOffset}`, 799, 10, fonts.bold, theme.mutedText, fonts.boldIsCustom, 7);
+  drawLabel(page, `${documentCurrent + pageNumberOffset}`, 799, 10, fonts.bold, theme.mutedText, fonts.boldIsCustom, 7);
   drawPdfBranding(page, branding, theme);
 }
 
@@ -1318,13 +1365,13 @@ function shouldDrawHighlight(step: ResolvedManualStep, mode: NonNullable<ManualP
   if (step.captureTarget === 'viewport') {
     return false;
   }
+  if (step.annotationBaked === true) {
+    return false;
+  }
   if (!hasDrawableSelectionGeometry(step)) {
     return false;
   }
-  if (step.captureTarget === 'element') {
-    return true;
-  }
-  return step.annotationBaked !== true;
+  return true;
 }
 
 function hasDrawableSelectionGeometry(step: ResolvedManualStep): boolean {

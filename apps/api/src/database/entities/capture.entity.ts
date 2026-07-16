@@ -50,6 +50,9 @@ export class CaptureEntity {
   @Column({ name: 'capture_target', type: 'varchar', length: 20, default: 'element' })
   captureTarget!: CaptureTarget;
 
+  @Column({ name: 'annotation_baked', type: 'boolean', default: false })
+  annotationBaked!: boolean;
+
   @Column({ type: 'varchar', length: 20 })
   status!: CaptureReviewStatus;
 

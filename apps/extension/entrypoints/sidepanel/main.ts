@@ -1359,13 +1359,14 @@ async function handleConfirmSelectedCapture(): Promise<void> {
     return;
   }
 
-  const originalAsset = await createRedactedOriginalImageAsset(capture);
+  const originalAsset = await createAnnotatedOriginalImageAsset(capture);
+  const contextAsset = await createContextImageAsset(capture);
   const protectedCapture: CapturedSelectionRecord = {
     ...capture,
     imageDataUrl: originalAsset.dataUrl,
     redactionRegions: [],
+    annotationBaked: true,
   };
-  const contextAsset = await createContextImageAsset(protectedCapture);
   const nextOrder = manualDraft.steps.length + 1;
   const localStep = createManualStep({
     capture: protectedCapture,
@@ -2413,7 +2414,9 @@ async function buildManualStepFromRemoteStep(
     contextRegion: selectedElement.rect,
     createdAt: remoteStep.createdAt,
     ...(captureTarget === undefined ? {} : { captureTarget }),
-    annotationBaked: !hasSelectionGeometry || remoteStep.sourceCapture?.captureTarget === 'viewport',
+    annotationBaked: remoteStep.sourceCapture?.annotationBaked === true
+      || !hasSelectionGeometry
+      || remoteStep.sourceCapture?.captureTarget === 'viewport',
     remoteManualId: manualId,
     remoteCaptureId: remoteStep.sourceCaptureId,
     remoteStepId: remoteStep.id,
@@ -2687,6 +2690,7 @@ async function syncConfirmedStepToBackend(
         capture.imageDataUrl,
         step.title,
         capture.captureTarget,
+        step.annotationBaked === true,
       ),
       description: step.description,
       framing: DEFAULT_REMOTE_FRAMING,
@@ -2839,11 +2843,11 @@ async function deleteRemoteStepIfNeeded(step: ManualStep): Promise<void> {
   }
 }
 
-async function createRedactedOriginalImageAsset(
+async function createAnnotatedOriginalImageAsset(
   capture: CapturedSelectionRecord,
 ): Promise<GeneratedImageAsset> {
   const format = detectImageFormatFromDataUrl(capture.imageDataUrl);
-  if (capture.redactionRegions.length === 0) {
+  if (capture.captureTarget === 'viewport' && capture.redactionRegions.length === 0) {
     return {
       dataUrl: capture.imageDataUrl,
       format,
@@ -2852,22 +2856,13 @@ async function createRedactedOriginalImageAsset(
 
   const image = await loadCaptureImage(capture.imageDataUrl);
   const detachedCanvas = document.createElement('canvas');
-  detachedCanvas.width = Math.max(1, image.naturalWidth);
-  detachedCanvas.height = Math.max(1, image.naturalHeight);
-  const context = detachedCanvas.getContext('2d');
-  if (context === null) {
-    throw new Error('No se pudo preparar la captura protegida.');
-  }
-
-  context.drawImage(image, 0, 0);
-  applyImageRedactions(
-    context,
-    image.naturalWidth,
-    image.naturalHeight,
-    { x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight },
-    detachedCanvas.width,
-    detachedCanvas.height,
+  drawCapturePreviewToCanvas(
+    detachedCanvas,
+    image,
+    capture,
+    'full',
     capture.redactionRegions,
+    false,
   );
 
   if (format === 'jpeg') {
@@ -3167,6 +3162,7 @@ function drawCapturePreviewToCanvas(
   capture: CapturedSelectionRecord,
   mode: PreviewMode,
   redactionRegions: ImageRedactionRegion[] = capture.redactionRegions,
+  drawSelectionMask = true,
 ): void {
   const imageScale = getImageScale(image, capture);
   const sourceRect = mode === 'context'
@@ -3226,7 +3222,9 @@ function drawCapturePreviewToCanvas(
     height: selectedRect.height * drawScaleY,
   };
 
-  drawOutsideMask(context, drawWidth, drawHeight, highlightRect, mode);
+  if (drawSelectionMask) {
+    drawOutsideMask(context, drawWidth, drawHeight, highlightRect, mode);
+  }
   drawHighlight(context, highlightRect);
 }
 

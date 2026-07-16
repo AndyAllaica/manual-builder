@@ -98,6 +98,7 @@ export interface CaptureRecord {
   selectionRect: CaptureSelectionRect | null;
   viewport: CaptureViewport | null;
   captureTarget: CaptureTarget;
+  annotationBaked: boolean;
   status: CaptureReviewStatus;
   originalAssetId: string;
   contextAssetId: string | null;
@@ -231,6 +232,7 @@ export interface CreateCaptureInput {
   selectionRect?: CaptureSelectionRect | null;
   viewport?: CaptureViewport | null;
   captureTarget?: CaptureTarget;
+  annotationBaked?: boolean;
   originalAsset: StoredAssetInput;
   contextAsset?: StoredAssetInput | null;
 }

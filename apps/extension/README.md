@@ -195,13 +195,13 @@ Caracteristicas principales:
 - La descripcion del paso se muestra una sola vez en `ACCION PRINCIPAL`, respetando cada linea como una vineta.
 - `PAGINA / RECURSO` aparece solo en el primer paso y usa la informacion de su captura.
 - La exportacion por sistema agrega un indice de modulos y acciones, y un breadcrumb de contexto en cada paso.
-- La captura completa remota conserva la geometria del elemento y reconstruye el cuadro rojo al exportar el sistema.
+- Al confirmar, la captura completa almacena el cuadro rojo dentro del JPEG; el PDF local y remoto no vuelven a dibujarlo.
 - Encabezado y pie PNG configurados en codigo, de ancho completo, con transparencia y exclusivos de la orientacion vertical.
 - La orientacion elegida se conserva en `browser.storage.local`; horizontal sigue siendo el valor predeterminado.
 - Paleta roja, blanca, dorada y acentos verdes para resultados.
 - Captura general sin deformacion, detalle contextual y placeholders cuando falta una imagen.
 - JPEG, PNG y WebP; WebP se convierte mediante Canvas antes de incrustarse.
-- Captura visible en JPEG con calidad 95/100, sin redimensionamiento previo.
+- Captura visible en JPEG con calidad 95/100, sin redimensionamiento; al confirmar se incorporan el cuadro y los difuminados al original definitivo.
 - Contexto WebP con calidad 0.94 y PDF con limite de 2560 px y calidad 0.94.
 - Instrucciones inferidas cuando la descripcion esta vacia o contiene texto de prueba.
 - Compatibilidad con `guide`, `annotationBaked` y alias de imagenes de JSON anteriores.
@@ -245,7 +245,7 @@ La ausencia de estos archivos no bloquea la exportacion. Se utiliza Helvetica co
 - Al cargar un manual remoto, la extension reemplaza el borrador local actual.
 - La edicion remota actual sincroniza titulo, descripcion y resultado esperado; eliminar o reordenar pasos sigue siendo local.
 - El almacenamiento remoto depende de que la API este ejecutandose con `ASSET_STORAGE_PROVIDER=onedrive-business`.
-- Las capturas remotas creadas antes de persistir `selection_rect` y `viewport` no pueden reconstruir el cuadro rojo si tampoco existe una copia local del paso; deben recapturarse o resincronizarse.
+- Las capturas anteriores a `annotation_baked` mantienen el resaltado calculado durante la exportacion; para almacenar el cuadro dentro del archivo deben recapturarse.
 - No se generan archivos DOCX.
 - Firefox puede mostrar advertencias de build relacionadas con distribucion, aunque el flujo local sigue funcionando.
 
@@ -292,3 +292,4 @@ La siguiente iteracion deberia incorporar:
 27. Colocar `header.png` y `footer.png` en `public/pdf-branding`, exportar en vertical desde `Salida local` y desde el sistema, y comprobar que ambas los incluyan sin perder transparencia.
 28. Comprobar que `Crear manual remoto` desaparezca al seleccionar una accion que ya tenga manual.
 29. Cambiar `Orientacion del PDF` a `Vertical` y verificar tanto la salida local como la exportacion completa del sistema.
+30. Confirmar una captura de elemento y comprobar que el JPEG original descargado ya contenga el cuadro rojo y que el PDF no lo duplique.
