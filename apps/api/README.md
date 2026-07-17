@@ -248,6 +248,7 @@ http://localhost:3001/uploads/
 - `GET /api/v1/manuals/action/:actionId`
 - `GET /api/v1/manuals/:manualId`
 - `POST /api/v1/manuals/:manualId/steps/from-capture`
+- `PATCH /api/v1/manuals/:manualId/steps/order`
 - `PATCH /api/v1/manuals/steps/:stepId`
 - `DELETE /api/v1/manuals/steps/:stepId`
 
@@ -272,6 +273,7 @@ http://localhost:3001/uploads/
 9. Enviar capturas desde la extension usando `POST /api/v1/capture-sessions/:sessionId/captures`.
 10. Revisar o descartar con `PATCH /api/v1/capture-sessions/captures/:captureId`.
 11. Convertir una captura aprobada en paso con `POST /api/v1/manuals/:manualId/steps/from-capture`.
+12. Persistir un nuevo orden enviando todos los IDs de paso con `PATCH /api/v1/manuals/:manualId/steps/order`.
 
 ## Formato de captura
 
@@ -306,5 +308,5 @@ Ejemplo:
 1. Crear administracion visual de usuarios y roles.
 2. Evaluar CAS/OIDC solo si el uso temporal pasa a produccion formal.
 3. Agregar endpoint de descarga autenticada por asset ID si se requiere control fino de acceso.
-4. Incorporar versionado real de manuales y reorder de pasos.
+4. Incorporar versionado real de manuales.
 5. Luego generar PDF y DOCX.

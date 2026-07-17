@@ -4,6 +4,7 @@ import { SimpleAuthGuard } from '../auth/simple-auth.guard';
 import { type AuthenticatedUser } from '../auth/auth.types';
 import { AddStepFromCaptureDto } from './dto/add-step-from-capture.dto';
 import { CreateManualDto } from './dto/create-manual.dto';
+import { ReorderManualStepsDto } from './dto/reorder-manual-steps.dto';
 import { UpdateManualStepDto } from './dto/update-manual-step.dto';
 import { ManualsService } from './manuals.service';
 
@@ -43,6 +44,15 @@ export class ManualsController {
     @Body() body: AddStepFromCaptureDto,
   ) {
     return this.manualsService.addStepFromCapture(user, manualId, body);
+  }
+
+  @Patch(':manualId/steps/order')
+  reorderManualSteps(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('manualId') manualId: string,
+    @Body() body: ReorderManualStepsDto,
+  ) {
+    return this.manualsService.reorderManualSteps(user, manualId, body);
   }
 
   @Patch('steps/:stepId')

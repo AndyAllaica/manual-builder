@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, Repository } from 'typeorm';
@@ -35,6 +35,7 @@ import {
   type ManualRecord,
   type ManualStepRecord,
   type ManualVersionRecord,
+  type ReorderManualStepsInput,
   type ReviewCaptureInput,
   type SystemModuleRecord,
   type SystemRecord,
@@ -744,6 +745,68 @@ export class ManualBuilderRepository {
       await manager.save(manual);
 
       return toManualStepRecord(step);
+    });
+  }
+
+  async reorderManualSteps(
+    manualId: string,
+    input: ReorderManualStepsInput,
+  ): Promise<ManualStepRecord[]> {
+    return this.dataSource.transaction(async (manager) => {
+      const manual = await manager.findOne(ManualEntity, {
+        where: { id: manualId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (manual === null || manual.currentVersionId === null) {
+        throw new NotFoundException(`Manual no encontrado: ${manualId}`);
+      }
+
+      const version = await manager.findOne(ManualVersionEntity, {
+        where: { id: manual.currentVersionId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (version === null) {
+        throw new NotFoundException(`Version no encontrada: ${manual.currentVersionId}`);
+      }
+
+      const currentSteps = await manager.find(ManualStepEntity, {
+        where: { versionId: version.id },
+        order: { order: 'ASC' },
+      });
+      const requestedStepIds = input.stepIds;
+      const uniqueStepIds = new Set(requestedStepIds);
+      const currentStepsById = new Map(currentSteps.map((step) => [step.id, step]));
+
+      if (
+        requestedStepIds.length !== currentSteps.length ||
+        uniqueStepIds.size !== requestedStepIds.length ||
+        requestedStepIds.some((stepId) => !currentStepsById.has(stepId))
+      ) {
+        throw new BadRequestException(
+          'El orden debe incluir exactamente una vez todos los pasos de la version actual del manual.',
+        );
+      }
+
+      const orderedSteps = requestedStepIds.map((stepId) => currentStepsById.get(stepId)!);
+
+      // La fase negativa libera todos los valores positivos sin violar el indice unico.
+      for (const [index, step] of orderedSteps.entries()) {
+        step.order = -(index + 1);
+        await manager.save(step);
+      }
+
+      for (const [index, step] of orderedSteps.entries()) {
+        step.order = index + 1;
+        await manager.save(step);
+      }
+
+      version.updatedAt = new Date();
+      manual.updatedAt = new Date();
+      await manager.save(version);
+      await manager.save(manual);
+
+      return orderedSteps.map(toManualStepRecord);
     });
   }
 

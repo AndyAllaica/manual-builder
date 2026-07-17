@@ -4,6 +4,7 @@ import { ManualBuilderRepository } from '../data/manual-builder.repository';
 import {
   type AddStepFromCaptureInput,
   type CreateManualInput,
+  type ReorderManualStepsInput,
   type UpdateManualStepInput,
 } from '../domain/manual-builder.types';
 
@@ -105,6 +106,17 @@ export class ManualsService {
     return {
       step,
       asset: await this.repository.findAssetById(step.assetId),
+    };
+  }
+
+  async reorderManualSteps(user: AuthenticatedUser, manualId: string, input: ReorderManualStepsInput) {
+    await this.repository.ensureUserCanEditWorkspace(
+      user.id,
+      await this.repository.getWorkspaceIdByManualId(manualId),
+    );
+
+    return {
+      steps: await this.repository.reorderManualSteps(manualId, input),
     };
   }
 

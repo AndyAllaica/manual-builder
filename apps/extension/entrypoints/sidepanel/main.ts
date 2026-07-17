@@ -1454,6 +1454,7 @@ async function handleSaveSelectedStep(): Promise<void> {
 }
 
 async function moveSelectedStep(direction: -1 | 1): Promise<void> {
+  await persistPendingEditsIfNeeded();
   const manualDraft = await loadManualDraft();
   const currentIndex = manualDraft.steps.findIndex((step) => step.id === selectedStepId);
 
@@ -1474,11 +1475,7 @@ async function moveSelectedStep(direction: -1 | 1): Promise<void> {
   }
 
   nextSteps.splice(targetIndex, 0, movedStep);
-  await saveManualDraft({
-    ...manualDraft,
-    steps: nextSteps,
-  });
-  await refreshState();
+  await persistReorderedManualSteps(manualDraft, nextSteps);
 }
 
 async function reorderStepByDrop(
@@ -1506,9 +1503,21 @@ async function reorderStepByDrop(
   const insertionIndex = position === 'after' ? adjustedTargetIndex + 1 : adjustedTargetIndex;
   nextSteps.splice(insertionIndex, 0, movedStep);
 
+  await persistReorderedManualSteps(manualDraft, nextSteps);
+}
+
+async function persistReorderedManualSteps(
+  manualDraft: ManualDraft,
+  steps: ManualStep[],
+): Promise<void> {
+  if (!(await syncReorderedStepsToBackend(steps))) {
+    await refreshState();
+    return;
+  }
+
   await saveManualDraft({
     ...manualDraft,
-    steps: nextSteps,
+    steps,
   });
   await refreshState();
 }
@@ -2833,6 +2842,61 @@ async function syncEditedStepToBackend(step: ManualStep): Promise<ManualStep> {
       remoteSyncStatus: 'error',
       remoteSyncError: syncError,
     };
+  }
+}
+
+async function syncReorderedStepsToBackend(steps: ManualStep[]): Promise<boolean> {
+  const settings = await loadBackendSyncSettings();
+  const configurationError = getBackendSettingsConfigurationError(settings, true);
+  const remoteStepIds = steps.map((step) => step.remoteStepId?.trim() ?? '');
+  const hasStepFromAnotherManual = steps.some((step) => {
+    const remoteManualId = step.remoteManualId?.trim() ?? '';
+    return remoteManualId.length > 0 && remoteManualId !== settings.manualId;
+  });
+  const validationError = configurationError
+    ?? (remoteStepIds.some((stepId) => stepId.length === 0)
+      ? 'No se puede sincronizar el orden porque existen pasos sin identificador remoto. Carga nuevamente el manual remoto.'
+      : hasStepFromAnotherManual
+        ? 'Los pasos locales no pertenecen al manual remoto seleccionado. Carga nuevamente el manual antes de reordenar.'
+        : null);
+
+  if (validationError !== null) {
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: validationError,
+    });
+    return false;
+  }
+
+  try {
+    const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
+    const response = await client.reorderManualSteps(settings.manualId, {
+      stepIds: remoteStepIds,
+    });
+    const confirmedStepIds = [...response.steps]
+      .sort((left, right) => left.order - right.order)
+      .map((step) => step.id);
+
+    if (
+      confirmedStepIds.length !== remoteStepIds.length ||
+      confirmedStepIds.some((stepId, index) => stepId !== remoteStepIds[index])
+    ) {
+      throw new Error('La API no confirmo el orden completo solicitado para los pasos.');
+    }
+
+    await saveBackendSyncSettings({
+      ...settings,
+      apiBaseUrl: client.baseUrl,
+      lastError: null,
+    });
+    return true;
+  } catch (error) {
+    const syncError = getErrorMessage(error);
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: `No se pudo guardar el nuevo orden: ${syncError}`,
+    });
+    return false;
   }
 }
 

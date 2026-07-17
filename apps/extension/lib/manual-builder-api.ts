@@ -235,6 +235,14 @@ export interface UpdateRemoteManualStepInput {
   expectedResult?: string;
 }
 
+export interface ReorderRemoteManualStepsInput {
+  stepIds: string[];
+}
+
+export interface ReorderRemoteManualStepsResponse {
+  steps: RemoteManualStepRecord[];
+}
+
 export interface DeleteRemoteManualStepResponse {
   stepId: string;
   manualId: string;
@@ -376,6 +384,10 @@ export interface ManualBuilderApiClient {
     stepId: string,
     input: UpdateRemoteManualStepInput,
   ): Promise<AddRemoteStepResponse>;
+  reorderManualSteps(
+    manualId: string,
+    input: ReorderRemoteManualStepsInput,
+  ): Promise<ReorderRemoteManualStepsResponse>;
   deleteManualStep(stepId: string): Promise<DeleteRemoteManualStepResponse>;
 }
 
@@ -506,6 +518,16 @@ export function createManualBuilderApiClient(apiBaseUrl: string, authToken?: str
       requestJson<AddRemoteStepResponse>(
         baseUrl,
         `/manuals/steps/${encodeURIComponent(stepId)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(input),
+        },
+        authToken,
+      ),
+    reorderManualSteps: (manualId, input) =>
+      requestJson<ReorderRemoteManualStepsResponse>(
+        baseUrl,
+        `/manuals/${encodeURIComponent(manualId)}/steps/order`,
         {
           method: 'PATCH',
           body: JSON.stringify(input),

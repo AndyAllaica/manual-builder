@@ -259,6 +259,10 @@ export interface UpdateManualStepInput {
   expectedResult?: string;
 }
 
+export interface ReorderManualStepsInput {
+  stepIds: string[];
+}
+
 export interface DeleteManualStepResult {
   stepId: string;
   manualId: string;

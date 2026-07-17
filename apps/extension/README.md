@@ -101,7 +101,7 @@ Edge reserva `ALT + SHIFT + S` para su propia herramienta. Manual Builder usa `A
 - `Agregar al manual`: disponible solo despues de crear o seleccionar un manual remoto; confirma la captura y crea el paso local y remoto.
 - `Descartar captura`: eliminar la captura pendiente sin guardarla.
 - `Guardar cambios`: actualizar titulo y descripcion del paso seleccionado.
-- `Arrastrar un paso`: cambiar su posicion y renumerar automaticamente todos los pasos.
+- `Arrastrar un paso`: cambiar su posicion, persistir el orden en PostgreSQL y renumerar automaticamente todos los pasos.
 - Los titulos guardados no incluyen `Paso n:`; ese prefijo se agrega dinamicamente solo al generar el PDF.
 - `Subir` y `Bajar`: reordenar pasos del manual.
 - `Entrar`: iniciar sesion en el backend.
@@ -160,7 +160,7 @@ Edge reserva `ALT + SHIFT + S` para su propia herramienta. Manual Builder usa `A
 11. El editor de pasos permite:
    - Cambiar titulo.
    - Escribir una accion por linea y usar guiones, asteriscos, vinetas o numeracion.
-   - Reordenar o eliminar el paso.
+   - Reordenar el paso local y remotamente, o eliminarlo.
    - Descargar la captura completa.
 12. La seccion de documento permite:
    - Definir el titulo general del manual.
