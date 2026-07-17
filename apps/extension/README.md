@@ -98,7 +98,7 @@ pnpm build:firefox
 - `Icono de la extension`: abrir la superficie de revision manualmente.
 
 Edge reserva `ALT + SHIFT + S` para su propia herramienta. Manual Builder usa `ALT + SHIFT + M`; el atajo se puede consultar o reasignar en `edge://extensions/shortcuts`.
-- `Agregar al manual`: convertir la captura actual en un paso persistente.
+- `Agregar al manual`: disponible solo despues de crear o seleccionar un manual remoto; confirma la captura y crea el paso local y remoto.
 - `Descartar captura`: eliminar la captura pendiente sin guardarla.
 - `Guardar cambios`: actualizar titulo y descripcion del paso seleccionado.
 - `Arrastrar un paso`: cambiar su posicion y renumerar automaticamente todos los pasos.
@@ -138,19 +138,19 @@ Edge reserva `ALT + SHIFT + S` para su propia herramienta. Manual Builder usa `A
    - Solo carga workspaces donde el usuario es miembro.
    - La extension crea o reutiliza una sesion remota para la accion seleccionada.
    - Las capturas pendientes permanecen en la extension y todavia no se envian al backend.
-   - Al confirmar, se envian juntos el original completo y el recorte contextual.
-   - Si existe un manual remoto seleccionado, la misma confirmacion crea tambien el paso remoto.
+   - Antes de confirmar se debe crear o seleccionar el manual remoto de la accion.
+   - Al confirmar, se envian juntos el original completo y el recorte contextual, y se crea el paso remoto.
 8. La interfaz de revision permite:
    - Revisar las capturas desde la mas antigua hasta la mas reciente.
    - Ver la captura completa con el elemento resaltado.
    - Marcar una o varias zonas sensibles para difuminarlas de forma irreversible.
-   - Confirmarla y crear un `ManualStep`.
+   - Confirmarla y crear un `ManualStep` solo cuando existe un manual remoto seleccionado.
    - Descartarla si no sirve.
 9. Cuando confirmas una captura:
    - Se genera un original protegido y una imagen contextual protegida y optimizada.
-   - Se guarda un paso persistente en `storage.local`.
-   - Si el backend esta activo, ambos assets se guardan mediante el proveedor configurado.
-   - Si hay manual remoto seleccionado, se crea tambien el paso remoto.
+   - Ambos assets se guardan mediante el proveedor configurado y se crea el paso remoto.
+   - Solo despues de que la API confirme el paso remoto se guarda el paso en `storage.local` y se elimina la captura pendiente.
+   - Si falta el manual o falla la sincronizacion, la captura permanece pendiente para evitar la perdida de datos.
    - El paso queda disponible para edicion, reordenacion y exportacion.
 10. Si cargas un manual remoto existente:
    - La extension descarga los pasos y sus imagenes desde el backend.
@@ -195,6 +195,7 @@ Caracteristicas principales:
 - La descripcion del paso se muestra una sola vez en `ACCION PRINCIPAL`, respetando cada linea como una vineta.
 - `PAGINA / RECURSO` aparece solo en el primer paso y usa la informacion de su captura.
 - La exportacion por sistema agrega un indice de modulos y acciones, y un breadcrumb de contexto en cada paso.
+- La exportacion por sistema usa el mismo titulo, autor y descripcion configurados en `Salida local`.
 - Al confirmar, la captura completa almacena el cuadro rojo dentro del JPEG; el PDF local y remoto no vuelven a dibujarlo.
 - Encabezado y pie PNG configurados en codigo, de ancho completo, con transparencia y exclusivos de la orientacion vertical.
 - La orientacion elegida se conserva en `browser.storage.local`; horizontal sigue siendo el valor predeterminado.
@@ -281,9 +282,9 @@ La siguiente iteracion deberia incorporar:
 16. Completar `Servidor`, usuario y una contrasena de al menos seis caracteres; se admiten letras y numeros.
 17. Usar `Entrar` o `Crear cuenta` y comprobar que funciona en el primer intento.
 18. Seleccionar o crear workspace, sistema, modulo y accion.
-19. Confirmar que el indicador muestre `Sincronizacion activa` sin pulsar un boton adicional de guardado.
-20. Realizar una captura nueva y verificar en PostgreSQL que el asset reciente tenga el proveedor esperado.
-21. Crear o seleccionar un manual remoto y confirmar un paso.
+19. Confirmar que `Agregar al manual` permanezca deshabilitado y muestre una advertencia mientras no exista un manual remoto seleccionado.
+20. Crear o seleccionar un manual remoto y comprobar que `Agregar al manual` se habilite.
+21. Confirmar una captura y verificar en PostgreSQL que el paso y sus assets tengan el proveedor esperado.
 22. Usar `Cargar manual remoto` y confirmar que los pasos existentes aparezcan en el editor.
 23. Editar titulo o descripcion de un paso cargado y pulsar `Guardar cambios`.
 24. Probar en una pagina con scroll y despues de navegar dentro de una SPA.

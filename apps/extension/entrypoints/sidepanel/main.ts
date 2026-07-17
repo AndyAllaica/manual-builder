@@ -112,6 +112,8 @@ const MANUAL_PAGE_PATH = '/manual.html' as const;
 const DEFAULT_REMOTE_FRAMING = 'context' as const;
 const STORED_IMAGE_QUALITY = 0.95;
 const CONTEXT_IMAGE_QUALITY = 0.94;
+const MANUAL_REQUIRED_FOR_CAPTURE_MESSAGE =
+  'Crea o selecciona un manual remoto antes de agregar capturas. Esta captura permanecera pendiente.';
 
 let currentState: CapturePanelState = createEmptyPanelState();
 let currentDraft: ManualDraft = createEmptyManualDraft();
@@ -212,6 +214,7 @@ const previewCaption = queryElement<HTMLParagraphElement>('preview-caption');
 const captureHeading = queryElement<HTMLHeadingElement>('capture-heading');
 const captureTime = queryElement<HTMLParagraphElement>('capture-time');
 const confirmCaptureButton = queryElement<HTMLButtonElement>('confirm-capture-button');
+const confirmCaptureHint = queryElement<HTMLParagraphElement>('confirm-capture-hint');
 const discardCaptureButton = queryElement<HTMLButtonElement>('discard-capture-button');
 const queueCount = queryElement<HTMLParagraphElement>('queue-count');
 const historyList = queryElement<HTMLDivElement>('history-list');
@@ -903,6 +906,8 @@ function renderCapturePreview(selectedCapture: CapturedSelectionRecord | null): 
     previewSection.hidden = true;
     reviewEmptySection.hidden = false;
     previewCaption.textContent = '';
+    confirmCaptureHint.hidden = true;
+    confirmCaptureHint.textContent = '';
     clearPreviewCanvas();
     return;
   }
@@ -922,7 +927,11 @@ function renderCapturePreview(selectedCapture: CapturedSelectionRecord | null): 
   detailRect.textContent = formatRect(selectedCapture.selectedElement.rect);
   detailViewport.textContent = formatViewport(selectedCapture);
   detailSurface.textContent = `${selectedCapture.captureTarget === 'viewport' ? 'Pantalla visible' : formatReviewSurface(currentState.reviewSurface)} | ${formatRemoteSyncStatus(selectedCapture.remoteSyncStatus)}`;
-  confirmCaptureButton.disabled = panelBusy;
+  const requiresRemoteManual = backendManualIdDraft.trim().length === 0;
+  confirmCaptureButton.disabled = panelBusy || requiresRemoteManual;
+  confirmCaptureButton.title = requiresRemoteManual ? MANUAL_REQUIRED_FOR_CAPTURE_MESSAGE : '';
+  confirmCaptureHint.hidden = !requiresRemoteManual;
+  confirmCaptureHint.textContent = requiresRemoteManual ? MANUAL_REQUIRED_FOR_CAPTURE_MESSAGE : '';
   discardCaptureButton.disabled = panelBusy;
   const regionCount = selectedCapture.redactionRegions.length;
   toggleRedactionButton.disabled = panelBusy;
@@ -1351,7 +1360,6 @@ function redrawSelectedCapture(): void {
 
 async function handleConfirmSelectedCapture(): Promise<void> {
   const panelState = await loadPanelState();
-  const manualDraft = await loadManualDraft();
   const capture = panelState.captures.find((entry) => entry.id === selectedCaptureId) ?? null;
 
   if (capture === null) {
@@ -1359,6 +1367,21 @@ async function handleConfirmSelectedCapture(): Promise<void> {
     return;
   }
 
+  const settings = await persistBackendSettingsDraft();
+  const configurationError = getBackendSettingsConfigurationError(settings, true);
+  if (configurationError !== null) {
+    const validationError = settings.manualId.trim().length === 0
+      ? MANUAL_REQUIRED_FOR_CAPTURE_MESSAGE
+      : configurationError;
+    await saveBackendSyncSettings({
+      ...settings,
+      lastError: validationError,
+    });
+    await refreshState();
+    return;
+  }
+
+  const manualDraft = await loadManualDraft();
   const originalAsset = await createAnnotatedOriginalImageAsset(capture);
   const contextAsset = await createContextImageAsset(capture);
   const protectedCapture: CapturedSelectionRecord = {
@@ -1377,6 +1400,11 @@ async function handleConfirmSelectedCapture(): Promise<void> {
     imageContextFormat: contextAsset.format,
   });
   const nextStep = await syncConfirmedStepToBackend(protectedCapture, localStep, contextAsset);
+
+  if (nextStep.remoteSyncStatus !== 'synced' || nextStep.remoteStepId === null) {
+    await refreshState();
+    return;
+  }
 
   selectedStepId = nextStep.id;
   selectedCaptureId = getNextCaptureId(panelState.captures, capture.id);
@@ -2122,7 +2150,11 @@ async function handleExportSystemPdf(): Promise<void> {
     const client = createManualBuilderApiClient(settings.apiBaseUrl, settings.authToken);
     setSystemExportStatus('working', 'Consultando modulos, acciones y manuales del sistema...');
     const systemTree = await client.getSystemTree(backendSystemIdDraft);
-    const systemDocument = await buildSystemPdfExportDocument(systemTree, client);
+    const systemDocument = await buildSystemPdfExportDocument(systemTree, client, {
+      title: currentDraft.title,
+      author: currentDraft.author,
+      description: currentDraft.description,
+    });
 
     if (systemDocument.steps.length === 0) {
       throw new Error('El sistema seleccionado no tiene pasos guardados para exportar.');
@@ -2153,6 +2185,7 @@ async function handleExportSystemPdf(): Promise<void> {
 async function buildSystemPdfExportDocument(
   systemTree: RemoteSystemTree,
   client: ReturnType<typeof createManualBuilderApiClient>,
+  metadata: Pick<ManualDraft, 'title' | 'author' | 'description'>,
 ): Promise<SystemPdfExportDocument> {
   const steps: ManualStep[] = [];
   const structure: ManualSystemStructure = {
@@ -2220,17 +2253,10 @@ async function buildSystemPdfExportDocument(
     .map((manual) => manual.updatedAt)
     .sort()
     .at(-1) ?? null;
-  const title = sanitizeManualTitle(`Manual del sistema ${systemTree.system.name}`)
-    || 'Manual del sistema';
-  const description = sanitizeManualDescription(systemTree.system.description)
-    || sanitizeManualDescription(
-      `Documento consolidado de ${structure.modules.length} modulo${structure.modules.length === 1 ? '' : 's'} del sistema ${systemTree.system.name}.`,
-    );
-
   return {
-    title,
-    author: sanitizeManualAuthor(backendDisplayNameDraft || backendUsernameDraft || 'Manual Builder'),
-    description,
+    title: sanitizeManualTitle(metadata.title) || 'Manual de usuario',
+    author: sanitizeManualAuthor(metadata.author),
+    description: sanitizeManualDescription(metadata.description),
     createdAt: new Date().toISOString(),
     steps,
     lastUpdatedAt: latestUpdatedAt,
@@ -2669,7 +2695,7 @@ async function syncConfirmedStepToBackend(
     return step;
   }
 
-  const configurationError = getBackendSettingsConfigurationError(settings, false);
+  const configurationError = getBackendSettingsConfigurationError(settings, true);
   if (configurationError !== null) {
     await saveBackendSyncSettings({
       ...settings,
@@ -2698,17 +2724,14 @@ async function syncConfirmedStepToBackend(
     });
     remoteCaptureId = createdCapture.capture.id;
 
-    let remoteStepId: string | null = null;
-    if (settings.manualId.trim().length > 0) {
-      const response = await client.addStepFromCapture(settings.manualId, {
-        captureId: remoteCaptureId,
-        title: step.title,
-        description: step.description,
-        expectedResult: step.guide?.expectedResult ?? '',
-        framing: DEFAULT_REMOTE_FRAMING,
-      });
-      remoteStepId = response.step.id;
-    }
+    const response = await client.addStepFromCapture(settings.manualId, {
+      captureId: remoteCaptureId,
+      title: step.title,
+      description: step.description,
+      expectedResult: step.guide?.expectedResult ?? '',
+      framing: DEFAULT_REMOTE_FRAMING,
+    });
+    const remoteStepId = response.step.id;
 
     await saveBackendSyncSettings({
       ...settings,
@@ -2918,6 +2941,7 @@ async function persistBackendSettingsDraft(): Promise<BackendSyncSettings> {
     previousSettings.workspaceId.trim() !== backendWorkspaceIdDraft.trim() ||
     previousSettings.startedBy.trim() !== backendStartedByDraft.trim() ||
     previousSettings.actionId.trim() !== backendActionIdDraft.trim();
+  const manualChanged = previousSettings.manualId.trim() !== backendManualIdDraft.trim();
   const nextAuthToken = shouldResetAuth ? null : backendAuthTokenDraft;
 
   const nextSettings: BackendSyncSettings = {
@@ -2941,12 +2965,13 @@ async function persistBackendSettingsDraft(): Promise<BackendSyncSettings> {
       : backendWorkspaces.find((workspace) => workspace.id === backendWorkspaceIdDraft)?.name ?? previousSettings.workspaceName,
     storageProvider: apiChanged ? null : backendStorageProviderDraft,
     lastValidatedAt: apiChanged ? null : previousSettings.lastValidatedAt,
-    lastError: shouldResetSession ? null : previousSettings.lastError,
+    lastError: shouldResetSession || manualChanged ? null : previousSettings.lastError,
   };
 
   await saveBackendSyncSettings(nextSettings);
   backendSettingsDirty = false;
-  return loadBackendSyncSettings();
+  currentBackendSettings = await loadBackendSyncSettings();
+  return currentBackendSettings;
 }
 
 async function ensureRemoteSessionId(
@@ -3020,9 +3045,9 @@ function buildBackendSyncStatusText(): string {
     return `Ultimo error remoto: ${currentBackendSettings.lastError}`;
   }
 
-  const configurationWarning = getBackendSettingsConfigurationError(currentBackendSettings, false);
+  const configurationWarning = getBackendSettingsConfigurationError(currentBackendSettings, true);
   if (configurationWarning !== null) {
-    return `${configurationWarning} Selecciona una accion para guardar remotamente las capturas que confirmes.`;
+    return `${configurationWarning} Las capturas permaneceran pendientes hasta completar la configuracion.`;
   }
 
   if (currentBackendSettings.storageProvider === 'local') {
