@@ -555,7 +555,7 @@ export class ManualBuilderRepository {
         textSnippet: normalizeOptionalText(input.textSnippet),
         title: normalizeOptionalText(input.title)
           ?? buildCaptureTitle(input.selectedElementTag, input.textSnippet, input.pageTitle),
-        description: normalizeOptionalText(input.description) ?? '',
+        description: normalizeOptionalMultilineText(input.description) ?? '',
         framing: input.framing,
         selectionRect: input.selectionRect ?? null,
         viewport: input.viewport ?? null,
@@ -607,7 +607,7 @@ export class ManualBuilderRepository {
 
       capture.status = input.status;
       capture.title = normalizeOptionalText(input.title) ?? capture.title;
-      capture.description = normalizeOptionalText(input.description) ?? capture.description;
+      capture.description = normalizeOptionalMultilineText(input.description) ?? capture.description;
       capture.framing = input.framing ?? capture.framing;
       capture.contextAssetId = nextContextAssetId;
       capture.updatedAt = new Date();
@@ -672,8 +672,8 @@ export class ManualBuilderRepository {
         versionId: version.id,
         order: nextOrder,
         title: normalizeOptionalText(input.title) ?? capture.title ?? `Paso ${nextOrder}`,
-        description: normalizeOptionalText(input.description) ?? capture.description,
-        expectedResult: normalizeOptionalText(input.expectedResult) ?? '',
+        description: normalizeOptionalMultilineText(input.description) ?? capture.description,
+        expectedResult: normalizeOptionalMultilineText(input.expectedResult) ?? '',
         selector: capture.selector,
         pageTitle: capture.pageTitle,
         pageUrl: capture.pageUrl,
@@ -732,9 +732,9 @@ export class ManualBuilderRepository {
       }
 
       step.title = normalizeOptionalText(input.title) ?? step.title;
-      step.description = normalizeOptionalText(input.description) ?? step.description;
+      step.description = normalizeOptionalMultilineText(input.description) ?? step.description;
       if (input.expectedResult !== undefined) {
-        step.expectedResult = normalizeOptionalText(input.expectedResult) ?? '';
+        step.expectedResult = normalizeOptionalMultilineText(input.expectedResult) ?? '';
       }
       version.updatedAt = new Date();
       manual.updatedAt = new Date();
@@ -1106,6 +1106,20 @@ function normalizeOptionalText(value: string | null | undefined): string | null 
   }
 
   const normalizedValue = value.replace(/\s+/g, ' ').trim();
+  return normalizedValue.length > 0 ? normalizedValue : null;
+}
+
+function normalizeOptionalMultilineText(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const normalizedValue = value
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\t ]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   return normalizedValue.length > 0 ? normalizedValue : null;
 }
 

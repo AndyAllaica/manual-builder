@@ -155,11 +155,15 @@ export function inferActions(element: CompatibleSelectedElement, label: string):
 }
 
 export function splitInstructionActions(value: unknown): string[] {
-  return normalizeWhitespace(value)
+  const normalized = normalizeWhitespace(value).replace(
+    /([^\n])\s+(?=(?:(?:[-*+]|\u2022|\u25E6|\u25AA)|\d{1,3}[.)])\s+)/gu,
+    '$1\n',
+  );
+
+  return normalized
     .split('\n')
     .map((line) => line.replace(/^(?:(?:[-*+]|\u2022|\u25E6|\u25AA)|\d{1,3}[.)])\s*/u, '').trim())
-    .filter(isUsableInstructionText)
-    .map((line) => truncateText(line, 220));
+    .filter(isUsableInstructionText);
 }
 
 export function resolveResource(pageTitle: string, url: string): string {

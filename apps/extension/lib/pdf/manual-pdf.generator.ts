@@ -250,6 +250,10 @@ function getStepHeaderText(step: ResolvedManualStep): string {
   return `ACCIÓN: ${step.hierarchy.actionName} | MÓDULO: ${step.hierarchy.moduleName}`;
 }
 
+function formatActionList(actions: readonly string[]): string {
+  return actions.map((action) => `• ${action}`).join('\n');
+}
+
 async function preparePdfBranding(
   document: PDFDocument,
   options: ManualPdfOptions,
@@ -641,7 +645,7 @@ async function drawPortraitStepPage(
   const actionWidth = contentWidth - detailWidth - gap;
   const detailX = 30 + actionWidth + gap;
   const generalCardY = lowerCardsY + lowerCardsHeight + gap;
-  const generalCardTop = contentBounds.top - 152;
+  const generalCardTop = contentBounds.top - 116;
   const generalCard = {
     x: 30,
     y: generalCardY,
@@ -654,9 +658,9 @@ async function drawPortraitStepPage(
   drawCard(page, generalCard, theme.white, theme.softBorder);
   let generalPlacement: ImagePlacement | undefined;
   if (images.general !== undefined) {
-    generalPlacement = await drawEmbeddedImage(document, page, images.general, insetBox(generalCard, 9), theme, true);
+    generalPlacement = await drawEmbeddedImage(document, page, images.general, insetBox(generalCard, 6), theme, true);
   } else {
-    drawImagePlaceholder(page, insetBox(generalCard, 9), 'Captura general no disponible', fonts, theme);
+    drawImagePlaceholder(page, insetBox(generalCard, 6), 'Captura general no disponible', fonts, theme);
   }
 
   if (generalPlacement !== undefined && shouldDrawHighlight(step, options.drawSelectionHighlight ?? 'auto')) {
@@ -668,19 +672,16 @@ async function drawPortraitStepPage(
 
   drawCard(page, actionCard, theme.white, theme.softBorder);
   drawLabel(page, 'ACCION PRINCIPAL', actionCard.x + 14, actionCard.y + actionCard.height - 18, fonts.bold, theme.primaryRed, fonts.boldIsCustom, 8);
-  const visibleActions = content.actions.slice(0, 10);
-  const actionText = visibleActions.map((action) => `- ${action}`).join('\n')
-    + (content.actions.length > visibleActions.length ? '\n...' : '');
+  const actionText = formatActionList(content.actions);
   drawTextBox(page, actionText, fonts, theme, {
     x: actionCard.x + 14,
     top: actionCard.y + actionCard.height - 34,
     width: actionCard.width - 28,
     height: actionCard.height - 44,
     preferredSize: 8.5,
-    minimumSize: 7,
+    minimumSize: 5.5,
     color: theme.darkText,
-    maxLines: 12,
-    lineHeightRatio: 1.23,
+    lineHeightRatio: 1.15,
   });
 
   drawCard(page, detailCard, theme.white, theme.softBorder);
@@ -1056,7 +1057,8 @@ async function drawStepPage(
   const hasExpectedResult = content.expectedResult.trim().length > 0;
   const hasBottomCards = hasExpectedResult;
   const mainContentBottom = hasBottomCards ? 125 : 38;
-  const generalCard = { x: 30, y: mainContentBottom, width: 518, height: 480 - mainContentBottom };
+  const mainContentTop = 486;
+  const generalCard = { x: 30, y: mainContentBottom, width: 518, height: mainContentTop - mainContentBottom };
   const detailCard = {
     x: 564,
     y: mainContentBottom,
@@ -1067,16 +1069,16 @@ async function drawStepPage(
     x: 564,
     y: detailCard.y + detailCard.height + 16,
     width: 248,
-    height: 480 - (detailCard.y + detailCard.height + 16),
+    height: mainContentTop - (detailCard.y + detailCard.height + 16),
   };
   const expectedCard = { x: 30, y: 38, width: 782, height: 70 };
 
   drawCard(page, generalCard, theme.white, theme.softBorder);
   let generalPlacement: ImagePlacement | undefined;
   if (images.general !== undefined) {
-    generalPlacement = await drawEmbeddedImage(document, page, images.general, insetBox(generalCard, 9), theme, true);
+    generalPlacement = await drawEmbeddedImage(document, page, images.general, insetBox(generalCard, 6), theme, true);
   } else {
-    drawImagePlaceholder(page, insetBox(generalCard, 9), 'Captura general no disponible', fonts, theme);
+    drawImagePlaceholder(page, insetBox(generalCard, 6), 'Captura general no disponible', fonts, theme);
   }
 
   if (generalPlacement !== undefined && shouldDrawHighlight(step, options.drawSelectionHighlight ?? 'auto')) {
@@ -1088,20 +1090,16 @@ async function drawStepPage(
 
   drawCard(page, actionCard, theme.white, theme.softBorder);
   drawLabel(page, 'ACCIÓN PRINCIPAL', actionCard.x + 14, actionCard.y + actionCard.height - 18, fonts.bold, theme.primaryRed, fonts.boldIsCustom, 8);
-  const maximumVisibleActions = actionCard.height >= 220 ? 7 : 5;
-  const visibleActions = content.actions.slice(0, maximumVisibleActions);
-  const actionText = visibleActions.map((action) => `- ${action}`).join('\n')
-    + (content.actions.length > visibleActions.length ? '\n...' : '');
+  const actionText = formatActionList(content.actions);
   drawTextBox(page, actionText, fonts, theme, {
     x: actionCard.x + 14,
     top: actionCard.y + actionCard.height - 34,
     width: actionCard.width - 28,
     height: actionCard.height - 44,
     preferredSize: 9,
-    minimumSize: 7,
+    minimumSize: 5.5,
     color: theme.darkText,
-    maxLines: actionCard.height >= 220 ? 17 : 13,
-    lineHeightRatio: 1.23,
+    lineHeightRatio: 1.15,
   });
 
   drawCard(page, detailCard, theme.white, theme.softBorder);
